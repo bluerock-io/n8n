@@ -1,15 +1,5 @@
 steps:
-  # Step 1: Restore pnpm cache (speeds up dependency installation)
-  - name: 'gcr.io/cloud-builders/gcloud'
-    id: 'restore-pnpm-cache'
-    entrypoint: 'bash'
-    args:
-      - '-c'
-      - |
-        gsutil -m rsync -r -d gs://${PROJECT_ID}_cloudbuild/pnpm-store .pnpm-store || echo "No cache found, starting fresh"
-    waitFor: ['-']
-
-  # Step 2: Install dependencies and build n8n artifacts
+  # Step 1: Install dependencies and build n8n artifacts
   - name: 'node:22.21.0-slim'
     id: 'build-artifacts'
     entrypoint: 'bash'
@@ -19,9 +9,6 @@ steps:
         set -e
         echo "Installing pnpm..."
         corepack enable pnpm
-
-        # Use cached pnpm store if available
-        pnpm config set store-dir /workspace/.pnpm-store
 
         echo "Installing dependencies..."
         pnpm install --frozen-lockfile
@@ -33,19 +20,8 @@ steps:
         ls -la dist/
     env:
       - 'CI=true'
-    waitFor: ['restore-pnpm-cache']
 
-  # Step 3: Save pnpm cache for future builds
-  - name: 'gcr.io/cloud-builders/gcloud'
-    id: 'save-pnpm-cache'
-    entrypoint: 'bash'
-    args:
-      - '-c'
-      - |
-        gsutil -m rsync -r -d .pnpm-store gs://${PROJECT_ID}_cloudbuild/pnpm-store || echo "Cache save failed, continuing"
-    waitFor: ['build-artifacts']
-
-  # Step 4: Build the Docker image with Kaniko (more efficient, better caching)
+  # Step 2: Build the Docker image with Kaniko
   - name: 'gcr.io/kaniko-project/executor:latest'
     id: 'build-docker-image'
     args:
@@ -54,7 +30,6 @@ steps:
       - '--destination=gcr.io/$PROJECT_ID/n8n-runners:latest'
       - '--cache=true'
       - '--cache-ttl=168h'
-      - '--compressed-caching=false'
       - '--build-arg=N8N_VERSION=$TAG_NAME'
       - '--build-arg=N8N_RELEASE_TYPE=release'
       - '--build-arg=TARGETPLATFORM=linux/amd64'
@@ -66,8 +41,8 @@ images:
   - 'gcr.io/$PROJECT_ID/n8n-runners:$COMMIT_SHA'
   - 'gcr.io/$PROJECT_ID/n8n-runners:latest'
 
-# Build timeout - reduced to 45 minutes (sufficient with caching)
-timeout: '2700s'
+# Build timeout - 60 minutes
+timeout: '3600s'
 
 # Use default machine type for cost savings
 # Default is N1_HIGHCPU_8 which is sufficient and cost-effective
