@@ -57,6 +57,7 @@ steps:
       - '--compressed-caching=false'
       - '--build-arg=N8N_VERSION=$TAG_NAME'
       - '--build-arg=N8N_RELEASE_TYPE=release'
+      - '--build-arg=TARGETPLATFORM=linux/amd64'
       - '--context=dir:///workspace/'
     waitFor: ['build-artifacts']
 
