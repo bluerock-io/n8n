@@ -21,8 +21,7 @@ steps:
         corepack enable pnpm
 
         # Use cached pnpm store if available
-        export PNPM_HOME="/workspace/.pnpm-store"
-        pnpm config set store-dir "$PNPM_HOME"
+        pnpm config set store-dir /workspace/.pnpm-store
 
         echo "Installing dependencies..."
         pnpm install --frozen-lockfile
