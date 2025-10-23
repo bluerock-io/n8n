@@ -36,11 +36,6 @@ steps:
       - '--context=dir:///workspace/'
     waitFor: ['build-artifacts']
 
-# Images to be pushed to Google Container Registry
-images:
-  - 'gcr.io/$PROJECT_ID/n8n-runners:$COMMIT_SHA'
-  - 'gcr.io/$PROJECT_ID/n8n-runners:latest'
-
 # Build timeout - 60 minutes
 timeout: '3600s'
 
