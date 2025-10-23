@@ -1,0 +1,77 @@
+steps:
+  # Step 1: Restore pnpm cache (speeds up dependency installation)
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'restore-pnpm-cache'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        gsutil -m rsync -r -d gs://${PROJECT_ID}_cloudbuild/pnpm-store .pnpm-store || echo "No cache found, starting fresh"
+    waitFor: ['-']
+
+  # Step 2: Install dependencies and build n8n artifacts
+  - name: 'node:22.21.0-slim'
+    id: 'build-artifacts'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -e
+        echo "Installing pnpm..."
+        corepack enable pnpm
+
+        # Use cached pnpm store if available
+        export PNPM_HOME="/workspace/.pnpm-store"
+        pnpm config set store-dir "$PNPM_HOME"
+
+        echo "Installing dependencies..."
+        pnpm install --frozen-lockfile
+
+        echo "Building n8n artifacts (this will create dist/task-runner-javascript)..."
+        pnpm run build:n8n
+
+        echo "Build artifacts created successfully"
+        ls -la dist/
+    env:
+      - 'CI=true'
+    waitFor: ['restore-pnpm-cache']
+
+  # Step 3: Save pnpm cache for future builds
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'save-pnpm-cache'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        gsutil -m rsync -r -d .pnpm-store gs://${PROJECT_ID}_cloudbuild/pnpm-store || echo "Cache save failed, continuing"
+    waitFor: ['build-artifacts']
+
+  # Step 4: Build the Docker image with Kaniko (more efficient, better caching)
+  - name: 'gcr.io/kaniko-project/executor:latest'
+    id: 'build-docker-image'
+    args:
+      - '--dockerfile=docker/images/runners/Dockerfile'
+      - '--destination=gcr.io/$PROJECT_ID/n8n-runners:$COMMIT_SHA'
+      - '--destination=gcr.io/$PROJECT_ID/n8n-runners:latest'
+      - '--cache=true'
+      - '--cache-ttl=168h'
+      - '--compressed-caching=false'
+      - '--build-arg=N8N_VERSION=$TAG_NAME'
+      - '--build-arg=N8N_RELEASE_TYPE=release'
+      - '--context=dir:///workspace/'
+    waitFor: ['build-artifacts']
+
+# Images to be pushed to Google Container Registry
+images:
+  - 'gcr.io/$PROJECT_ID/n8n-runners:$COMMIT_SHA'
+  - 'gcr.io/$PROJECT_ID/n8n-runners:latest'
+
+# Build timeout - reduced to 45 minutes (sufficient with caching)
+timeout: '2700s'
+
+# Use default machine type for cost savings
+# Default is N1_HIGHCPU_8 which is sufficient and cost-effective
+options:
+  # Using default machine type (no machineType specified = N1_HIGHCPU_8)
+  # diskSizeGb: 50  # Using default 100GB is fine, can reduce if needed
+  logging: CLOUD_LOGGING_ONLY  # Reduces logs storage costs
