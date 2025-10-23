@@ -92,12 +92,35 @@ RUN set -e; \
     cd / && rm -rf /launcher-temp
 
 # ==============================================================================
-# STAGE 4: Node alpine base for JS task runner
+# STAGE 4: Claude Code CLI download
+# ==============================================================================
+FROM alpine:3.22.1 AS claude-code-downloader
+ARG TARGETPLATFORM
+ARG CLAUDE_VERSION=latest
+
+RUN set -e; \
+    case "$TARGETPLATFORM" in \
+        "linux/amd64") ARCH_NAME="linux-x64" ;; \
+        "linux/arm64") ARCH_NAME="linux-arm64" ;; \
+        *) echo "Unsupported platform: $TARGETPLATFORM" && exit 1 ;; \
+    esac; \
+    apk add --no-cache curl jq; \
+    mkdir /claude-temp && cd /claude-temp; \
+    DOWNLOAD_URL=$(curl -s https://api.github.com/repos/anthropics/claude-code/releases/latest | jq -r ".assets[] | select(.name | contains(\"${ARCH_NAME}\")) | .browser_download_url"); \
+    echo "Downloading Claude Code from: ${DOWNLOAD_URL}"; \
+    curl -L -o claude.tar.gz "${DOWNLOAD_URL}"; \
+    mkdir -p /claude-bin; \
+    tar xzf claude.tar.gz -C /claude-bin --strip-components=1; \
+    chmod +x /claude-bin/claude; \
+    cd / && rm -rf /claude-temp
+
+# ==============================================================================
+# STAGE 5: Node alpine base for JS task runner
 # ==============================================================================
 FROM node:${NODE_VERSION}-alpine AS node-alpine
 
 # ==============================================================================
-# STAGE 5: Runtime
+# STAGE 6: Runtime
 # ==============================================================================
 FROM python:${PYTHON_VERSION}-alpine AS runtime
 ARG N8N_VERSION=snapshot
@@ -115,7 +138,8 @@ COPY --from=node-alpine /usr/local/bin/node /usr/local/bin/node
 
 # libstdc++ is required by Node
 # libc6-compat is required by task-runner-launcher
-RUN apk add --no-cache ca-certificates tini libstdc++ libc6-compat
+# git is required by Claude Code for repo operations
+RUN apk add --no-cache ca-certificates tini libstdc++ libc6-compat git
 
 RUN addgroup -g 1000 -S runner \
  && adduser  -u 1000 -S -G runner -h /home/runner -D runner
@@ -125,6 +149,7 @@ WORKDIR /home/runner
 COPY --from=javascript-runner-builder --chown=root:root /app/task-runner-javascript /opt/runners/task-runner-javascript
 COPY --from=python-runner-builder --chown=root:root /app/task-runner-python /opt/runners/task-runner-python
 COPY --from=launcher-downloader /launcher-bin/* /usr/local/bin/
+COPY --from=claude-code-downloader /claude-bin/claude /usr/local/bin/claude
 COPY --chown=root:root docker/images/runners/n8n-task-runners.json /etc/n8n-task-runners.json
 
 USER runner
