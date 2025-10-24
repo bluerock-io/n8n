@@ -112,7 +112,7 @@ ARG N8N_RELEASE_TYPE=dev
 
 ENV NODE_ENV=production \
     N8N_RELEASE_TYPE=${N8N_RELEASE_TYPE} \
-    SHELL=/bin/sh
+    SHELL=/bin/bash
 
 # Bring `uv` over from python-runner-builder
 COPY --from=python-runner-builder /usr/local/bin/uv /usr/local/bin/uv
@@ -123,7 +123,8 @@ COPY --from=node-alpine /usr/local/bin/node /usr/local/bin/node
 # libstdc++ is required by Node
 # libc6-compat is required by task-runner-launcher
 # git is required by Claude Code for repo operations
-RUN apk add --no-cache ca-certificates tini libstdc++ libc6-compat git
+# bash is required by Claude Code for executing shell commands
+RUN apk add --no-cache ca-certificates tini libstdc++ libc6-compat git bash
 
 RUN addgroup -g 1000 -S runner \
  && adduser  -u 1000 -S -G runner -h /home/runner -D runner
