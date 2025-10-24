@@ -155,7 +155,16 @@ export class JsTaskRunner extends TaskRunner {
 			const isSpawningClaudeBinary =
 				command === 'claude' ||
 				command === '/usr/local/bin/claude' ||
-				command.includes('node_modules/@anthropic-ai/claude-code');
+				command.includes('node_modules/@anthropic-ai/claude-code') ||
+				command.includes('claude-code');
+
+			// DEBUG: Log what we're spawning and our decision
+			console.log('[SECURITY] child_process.spawn detected:', {
+				command: command,
+				isClaudeBinary: isSpawningClaudeBinary,
+				keepingAPIKey: isSpawningClaudeBinary,
+				strippingAPIKey: !isSpawningClaudeBinary,
+			});
 
 			if (!isSpawningClaudeBinary) {
 				delete cleaned.ANTHROPIC_API_KEY;
