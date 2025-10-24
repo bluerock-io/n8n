@@ -158,12 +158,6 @@ export class JsTaskRunner extends TaskRunner {
 			const currentDepth = this.spawnDepth;
 			const shouldKeepAPIKey = currentDepth === 0;
 
-			console.error('[SECURITY] child_process.spawn:', JSON.stringify({
-				depth: currentDepth,
-				keepingAPIKey: shouldKeepAPIKey,
-				strippingAPIKey: !shouldKeepAPIKey,
-			}));
-
 			if (!shouldKeepAPIKey) {
 				delete cleaned.ANTHROPIC_API_KEY;
 			}
