@@ -159,12 +159,28 @@ export class JsTaskRunner extends TaskRunner {
 				command.includes('claude-code');
 
 			// DEBUG: Log what we're spawning and our decision
-			console.log('[SECURITY] child_process.spawn detected:', {
+			const debugInfo = {
+				timestamp: new Date().toISOString(),
 				command: command,
 				isClaudeBinary: isSpawningClaudeBinary,
 				keepingAPIKey: isSpawningClaudeBinary,
 				strippingAPIKey: !isSpawningClaudeBinary,
-			});
+			};
+
+			// Log to stderr (more visible)
+			console.error('[SECURITY] child_process.spawn:', JSON.stringify(debugInfo));
+
+			// Also write to a debug file we can check
+			try {
+				const fs = require('fs');
+				fs.appendFileSync(
+					'/tmp/child-process-debug.log',
+					JSON.stringify(debugInfo) + '\n',
+					'utf8',
+				);
+			} catch (e) {
+				// Ignore file write errors
+			}
 
 			if (!isSpawningClaudeBinary) {
 				delete cleaned.ANTHROPIC_API_KEY;
