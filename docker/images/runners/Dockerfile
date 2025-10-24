@@ -117,14 +117,18 @@ ENV NODE_ENV=production \
 # Bring `uv` over from python-runner-builder
 COPY --from=python-runner-builder /usr/local/bin/uv /usr/local/bin/uv
 
-# Bring node over from node-alpine
+# Bring node, npm, and supporting files from node-alpine
 COPY --from=node-alpine /usr/local/bin/node /usr/local/bin/node
+COPY --from=node-alpine /usr/local/bin/npm /usr/local/bin/npm
+COPY --from=node-alpine /usr/local/bin/npx /usr/local/bin/npx
+COPY --from=node-alpine /usr/local/lib/node_modules /usr/local/lib/node_modules
 
 # libstdc++ is required by Node
 # libc6-compat is required by task-runner-launcher
 # git is required by Claude Code for repo operations
 # bash is required by Claude Code for executing shell commands
-RUN apk add --no-cache ca-certificates tini libstdc++ libc6-compat git bash
+# curl is required for downloading files and API calls
+RUN apk add --no-cache ca-certificates tini libstdc++ libc6-compat git bash curl
 
 RUN addgroup -g 1000 -S runner \
  && adduser  -u 1000 -S -G runner -h /home/runner -D runner
