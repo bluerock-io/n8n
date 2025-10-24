@@ -21,8 +21,7 @@
 				"N8N_SENTRY_DSN",
 				"N8N_VERSION",
 				"ENVIRONMENT",
-				"DEPLOYMENT_NAME",
-				"ANTHROPIC_API_KEY"
+				"DEPLOYMENT_NAME"
 			],
 			"env-overrides": {
 				"NODE_FUNCTION_ALLOW_BUILTIN": "crypto,child_process",
