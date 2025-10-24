@@ -137,6 +137,11 @@ COPY --from=claude-code-installer /usr/local/lib/node_modules/@anthropic-ai/clau
 COPY --from=claude-code-installer /usr/local/bin/claude /usr/local/bin/claude
 COPY --chown=root:root docker/images/runners/n8n-task-runners.json /etc/n8n-task-runners.json
 
+# Ensure claude is executable and create config directory for runner user
+RUN chmod +x /usr/local/bin/claude && \
+    mkdir -p /home/runner/.config/claude && \
+    chown -R runner:runner /home/runner/.config
+
 USER runner
 
 EXPOSE 5680/tcp
