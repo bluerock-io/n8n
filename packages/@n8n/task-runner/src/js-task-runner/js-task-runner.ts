@@ -98,6 +98,9 @@ export class JsTaskRunner extends TaskRunner {
 
 	private readonly mode: 'secure' | 'insecure' = 'secure';
 
+	/** Track subprocess spawn depth to allow ANTHROPIC_API_KEY only at depth 0 */
+	private spawnDepth = 0;
+
 	constructor(config: MainConfig, name = 'JS Task Runner') {
 		super({
 			taskType: 'javascript',
@@ -143,46 +146,25 @@ export class JsTaskRunner extends TaskRunner {
 	private patchChildProcessGlobally() {
 		const childProcess = require('child_process');
 
-		const stripSensitiveEnvVars = (command: string, env?: NodeJS.ProcessEnv) => {
+		const stripSensitiveEnvVars = (env?: NodeJS.ProcessEnv) => {
 			const cleaned = env ? { ...env } : { ...process.env };
 
-			// Always strip n8n runner tokens
+			// Always strip n8n runner tokens from all subprocesses
 			delete cleaned.N8N_RUNNERS_GRANT_TOKEN;
 			delete cleaned.N8N_RUNNERS_AUTH_TOKEN;
 
-			// Only allow ANTHROPIC_API_KEY when spawning Claude Code binary
-			// Strip it from all other subprocesses (bash, git, npm, etc.)
-			const isSpawningClaudeBinary =
-				command === 'claude' ||
-				command === '/usr/local/bin/claude' ||
-				command.includes('node_modules/@anthropic-ai/claude-code') ||
-				command.includes('claude-code');
+			// Only allow ANTHROPIC_API_KEY at depth 0 (Agent SDK → Claude Code)
+			// Strip it from all subsequent spawns (Claude Code → tools like bash, git, npm)
+			const currentDepth = this.spawnDepth;
+			const shouldKeepAPIKey = currentDepth === 0;
 
-			// DEBUG: Log what we're spawning and our decision
-			const debugInfo = {
-				timestamp: new Date().toISOString(),
-				command: command,
-				isClaudeBinary: isSpawningClaudeBinary,
-				keepingAPIKey: isSpawningClaudeBinary,
-				strippingAPIKey: !isSpawningClaudeBinary,
-			};
+			console.error('[SECURITY] child_process.spawn:', JSON.stringify({
+				depth: currentDepth,
+				keepingAPIKey: shouldKeepAPIKey,
+				strippingAPIKey: !shouldKeepAPIKey,
+			}));
 
-			// Log to stderr (more visible)
-			console.error('[SECURITY] child_process.spawn:', JSON.stringify(debugInfo));
-
-			// Also write to a debug file we can check
-			try {
-				const fs = require('fs');
-				fs.appendFileSync(
-					'/tmp/child-process-debug.log',
-					JSON.stringify(debugInfo) + '\n',
-					'utf8',
-				);
-			} catch (e) {
-				// Ignore file write errors
-			}
-
-			if (!isSpawningClaudeBinary) {
+			if (!shouldKeepAPIKey) {
 				delete cleaned.ANTHROPIC_API_KEY;
 			}
 
@@ -196,39 +178,69 @@ export class JsTaskRunner extends TaskRunner {
 		const originalFork = childProcess.fork;
 
 		// Patch spawn
-		childProcess.spawn = function (command: string, args?: any, options?: any) {
+		childProcess.spawn = (command: string, args?: any, options?: any) => {
 			const secureOptions = {
 				...options,
-				env: stripSensitiveEnvVars(command, options?.env),
+				env: stripSensitiveEnvVars(options?.env),
 			};
-			return originalSpawn.call(this, command, args, secureOptions);
+
+			// Increment depth before spawning
+			this.spawnDepth++;
+
+			const child = originalSpawn.call(childProcess, command, args, secureOptions);
+
+			// Decrement depth when process exits
+			child.once('exit', () => {
+				this.spawnDepth--;
+			});
+
+			return child;
 		};
 
 		// Patch exec
-		childProcess.exec = function (command: string, options?: any, callback?: any) {
+		childProcess.exec = (command: string, options?: any, callback?: any) => {
 			const secureOptions = {
 				...options,
-				env: stripSensitiveEnvVars(command, options?.env),
+				env: stripSensitiveEnvVars(options?.env),
 			};
-			return originalExec.call(this, command, secureOptions, callback);
+			this.spawnDepth++;
+			const child = originalExec.call(childProcess, command, secureOptions, callback);
+			if (child) {
+				child.once('exit', () => {
+					this.spawnDepth--;
+				});
+			}
+			return child;
 		};
 
 		// Patch execFile
-		childProcess.execFile = function (file: string, args?: any, options?: any, callback?: any) {
+		childProcess.execFile = (file: string, args?: any, options?: any, callback?: any) => {
 			const secureOptions = {
 				...options,
-				env: stripSensitiveEnvVars(file, options?.env),
+				env: stripSensitiveEnvVars(options?.env),
 			};
-			return originalExecFile.call(this, file, args, secureOptions, callback);
+			this.spawnDepth++;
+			const child = originalExecFile.call(childProcess, file, args, secureOptions, callback);
+			if (child) {
+				child.once('exit', () => {
+					this.spawnDepth--;
+				});
+			}
+			return child;
 		};
 
 		// Patch fork
-		childProcess.fork = function (modulePath: string, args?: any, options?: any) {
+		childProcess.fork = (modulePath: string, args?: any, options?: any) => {
 			const secureOptions = {
 				...options,
-				env: stripSensitiveEnvVars(modulePath, options?.env),
+				env: stripSensitiveEnvVars(options?.env),
 			};
-			return originalFork.call(this, modulePath, args, secureOptions);
+			this.spawnDepth++;
+			const child = originalFork.call(childProcess, modulePath, args, secureOptions);
+			child.once('exit', () => {
+				this.spawnDepth--;
+			});
+			return child;
 		};
 	}
 
