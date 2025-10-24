@@ -142,15 +142,25 @@ export class JsTaskRunner extends TaskRunner {
 	 */
 	private patchChildProcessGlobally() {
 		const childProcess = require('child_process');
-		// Only strip n8n runner tokens - Claude Code needs ANTHROPIC_API_KEY to function
-		const SENSITIVE_ENV_VARS = [
-			'N8N_RUNNERS_GRANT_TOKEN',
-			'N8N_RUNNERS_AUTH_TOKEN',
-		];
 
-		const stripSensitiveEnvVars = (env?: NodeJS.ProcessEnv) => {
+		const stripSensitiveEnvVars = (command: string, env?: NodeJS.ProcessEnv) => {
 			const cleaned = env ? { ...env } : { ...process.env };
-			SENSITIVE_ENV_VARS.forEach((key) => delete cleaned[key]);
+
+			// Always strip n8n runner tokens
+			delete cleaned.N8N_RUNNERS_GRANT_TOKEN;
+			delete cleaned.N8N_RUNNERS_AUTH_TOKEN;
+
+			// Only allow ANTHROPIC_API_KEY when spawning Claude Code binary
+			// Strip it from all other subprocesses (bash, git, npm, etc.)
+			const isSpawningClaudeBinary =
+				command === 'claude' ||
+				command === '/usr/local/bin/claude' ||
+				command.includes('node_modules/@anthropic-ai/claude-code');
+
+			if (!isSpawningClaudeBinary) {
+				delete cleaned.ANTHROPIC_API_KEY;
+			}
+
 			return cleaned;
 		};
 
@@ -164,7 +174,7 @@ export class JsTaskRunner extends TaskRunner {
 		childProcess.spawn = function (command: string, args?: any, options?: any) {
 			const secureOptions = {
 				...options,
-				env: stripSensitiveEnvVars(options?.env),
+				env: stripSensitiveEnvVars(command, options?.env),
 			};
 			return originalSpawn.call(this, command, args, secureOptions);
 		};
@@ -173,7 +183,7 @@ export class JsTaskRunner extends TaskRunner {
 		childProcess.exec = function (command: string, options?: any, callback?: any) {
 			const secureOptions = {
 				...options,
-				env: stripSensitiveEnvVars(options?.env),
+				env: stripSensitiveEnvVars(command, options?.env),
 			};
 			return originalExec.call(this, command, secureOptions, callback);
 		};
@@ -182,7 +192,7 @@ export class JsTaskRunner extends TaskRunner {
 		childProcess.execFile = function (file: string, args?: any, options?: any, callback?: any) {
 			const secureOptions = {
 				...options,
-				env: stripSensitiveEnvVars(options?.env),
+				env: stripSensitiveEnvVars(file, options?.env),
 			};
 			return originalExecFile.call(this, file, args, secureOptions, callback);
 		};
@@ -191,7 +201,7 @@ export class JsTaskRunner extends TaskRunner {
 		childProcess.fork = function (modulePath: string, args?: any, options?: any) {
 			const secureOptions = {
 				...options,
-				env: stripSensitiveEnvVars(options?.env),
+				env: stripSensitiveEnvVars(modulePath, options?.env),
 			};
 			return originalFork.call(this, modulePath, args, secureOptions);
 		};
