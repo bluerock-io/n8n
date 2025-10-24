@@ -142,8 +142,8 @@ export class JsTaskRunner extends TaskRunner {
 	 */
 	private patchChildProcessGlobally() {
 		const childProcess = require('child_process');
+		// Only strip n8n runner tokens - Claude Code needs ANTHROPIC_API_KEY to function
 		const SENSITIVE_ENV_VARS = [
-			'ANTHROPIC_API_KEY',
 			'N8N_RUNNERS_GRANT_TOKEN',
 			'N8N_RUNNERS_AUTH_TOKEN',
 		];
