@@ -12,6 +12,7 @@
 			"health-check-server-port": "5681",
 			"allowed-env": [
 				"PATH",
+				"SHELL",
 				"GENERIC_TIMEZONE",
 				"NODE_OPTIONS",
 				"N8N_RUNNERS_AUTO_SHUTDOWN_TIMEOUT",
