@@ -122,12 +122,79 @@ export class JsTaskRunner extends TaskRunner {
 		);
 		this.mode = jsRunnerConfig.insecureMode ? 'insecure' : 'secure';
 
+		// Patch child_process globally BEFORE any external modules load
+		if (this.mode === 'secure') {
+			this.patchChildProcessGlobally();
+		}
+
 		this.requireResolver = createRequireResolver({
 			allowedBuiltInModules,
 			allowedExternalModules,
 		});
 
 		if (this.mode === 'secure') this.preventPrototypePollution(allowedExternalModules);
+	}
+
+	/**
+	 * Globally patches the child_process module to strip sensitive environment
+	 * variables from all spawned subprocesses. This must be done before external
+	 * modules (like @anthropic-ai/claude-agent-sdk) are loaded.
+	 */
+	private patchChildProcessGlobally() {
+		const childProcess = require('child_process');
+		const SENSITIVE_ENV_VARS = [
+			'ANTHROPIC_API_KEY',
+			'N8N_RUNNERS_GRANT_TOKEN',
+			'N8N_RUNNERS_AUTH_TOKEN',
+		];
+
+		const stripSensitiveEnvVars = (env?: NodeJS.ProcessEnv) => {
+			const cleaned = env ? { ...env } : { ...process.env };
+			SENSITIVE_ENV_VARS.forEach((key) => delete cleaned[key]);
+			return cleaned;
+		};
+
+		// Store original methods
+		const originalSpawn = childProcess.spawn;
+		const originalExec = childProcess.exec;
+		const originalExecFile = childProcess.execFile;
+		const originalFork = childProcess.fork;
+
+		// Patch spawn
+		childProcess.spawn = function (command: string, args?: any, options?: any) {
+			const secureOptions = {
+				...options,
+				env: stripSensitiveEnvVars(options?.env),
+			};
+			return originalSpawn.call(this, command, args, secureOptions);
+		};
+
+		// Patch exec
+		childProcess.exec = function (command: string, options?: any, callback?: any) {
+			const secureOptions = {
+				...options,
+				env: stripSensitiveEnvVars(options?.env),
+			};
+			return originalExec.call(this, command, secureOptions, callback);
+		};
+
+		// Patch execFile
+		childProcess.execFile = function (file: string, args?: any, options?: any, callback?: any) {
+			const secureOptions = {
+				...options,
+				env: stripSensitiveEnvVars(options?.env),
+			};
+			return originalExecFile.call(this, file, args, secureOptions, callback);
+		};
+
+		// Patch fork
+		childProcess.fork = function (modulePath: string, args?: any, options?: any) {
+			const secureOptions = {
+				...options,
+				env: stripSensitiveEnvVars(options?.env),
+			};
+			return originalFork.call(this, modulePath, args, secureOptions);
+		};
 	}
 
 	private preventPrototypePollution(allowedExternalModules: Set<string> | '*') {
