@@ -98,9 +98,6 @@ export class JsTaskRunner extends TaskRunner {
 
 	private readonly mode: 'secure' | 'insecure' = 'secure';
 
-	/** Track subprocess spawn depth to allow ANTHROPIC_API_KEY only at depth 0 */
-	private spawnDepth = 0;
-
 	constructor(config: MainConfig, name = 'JS Task Runner') {
 		super({
 			taskType: 'javascript',
@@ -139,9 +136,12 @@ export class JsTaskRunner extends TaskRunner {
 	}
 
 	/**
-	 * Globally patches the child_process module to strip sensitive environment
-	 * variables from all spawned subprocesses. This must be done before external
-	 * modules are loaded.
+	 * Globally patches child_process to strip n8n authentication tokens from
+	 * subprocess environments. This prevents n8n runner credentials from being
+	 * accessible to Claude Code or analyzed code.
+	 *
+	 * Note: ANTHROPIC_API_KEY is NOT stripped as Claude Code CLI requires it.
+	 * Security for ANTHROPIC_API_KEY is enforced via SDK hooks in user code.
 	 */
 	private patchChildProcessGlobally() {
 		const childProcess = require('child_process');
@@ -166,70 +166,40 @@ export class JsTaskRunner extends TaskRunner {
 		const originalExecFile = childProcess.execFile;
 		const originalFork = childProcess.fork;
 
-		// Patch spawn
+		// Patch spawn to strip n8n tokens
 		childProcess.spawn = (command: string, args?: any, options?: any) => {
 			const secureOptions = {
 				...options,
 				env: stripSensitiveEnvVars(options?.env),
 			};
-
-			// Increment depth before spawning
-			this.spawnDepth++;
-
-			const child = originalSpawn.call(childProcess, command, args, secureOptions);
-
-			// Decrement depth when process exits
-			child.once('exit', () => {
-				this.spawnDepth--;
-			});
-
-			return child;
+			return originalSpawn.call(childProcess, command, args, secureOptions);
 		};
 
-		// Patch exec
+		// Patch exec to strip n8n tokens
 		childProcess.exec = (command: string, options?: any, callback?: any) => {
 			const secureOptions = {
 				...options,
 				env: stripSensitiveEnvVars(options?.env),
 			};
-			this.spawnDepth++;
-			const child = originalExec.call(childProcess, command, secureOptions, callback);
-			if (child) {
-				child.once('exit', () => {
-					this.spawnDepth--;
-				});
-			}
-			return child;
+			return originalExec.call(childProcess, command, secureOptions, callback);
 		};
 
-		// Patch execFile
+		// Patch execFile to strip n8n tokens
 		childProcess.execFile = (file: string, args?: any, options?: any, callback?: any) => {
 			const secureOptions = {
 				...options,
 				env: stripSensitiveEnvVars(options?.env),
 			};
-			this.spawnDepth++;
-			const child = originalExecFile.call(childProcess, file, args, secureOptions, callback);
-			if (child) {
-				child.once('exit', () => {
-					this.spawnDepth--;
-				});
-			}
-			return child;
+			return originalExecFile.call(childProcess, file, args, secureOptions, callback);
 		};
 
-		// Patch fork
+		// Patch fork to strip n8n tokens
 		childProcess.fork = (modulePath: string, args?: any, options?: any) => {
 			const secureOptions = {
 				...options,
 				env: stripSensitiveEnvVars(options?.env),
 			};
-			this.spawnDepth++;
-			const child = originalFork.call(childProcess, modulePath, args, secureOptions);
-			child.once('exit', () => {
-				this.spawnDepth--;
-			});
-			return child;
+			return originalFork.call(childProcess, modulePath, args, secureOptions);
 		};
 	}
 
