@@ -141,7 +141,7 @@ export class JsTaskRunner extends TaskRunner {
 	/**
 	 * Globally patches the child_process module to strip sensitive environment
 	 * variables from all spawned subprocesses. This must be done before external
-	 * modules (like @anthropic-ai/claude-agent-sdk) are loaded.
+	 * modules are loaded.
 	 */
 	private patchChildProcessGlobally() {
 		const childProcess = require('child_process');
@@ -153,14 +153,9 @@ export class JsTaskRunner extends TaskRunner {
 			delete cleaned.N8N_RUNNERS_GRANT_TOKEN;
 			delete cleaned.N8N_RUNNERS_AUTH_TOKEN;
 
-			// Only allow ANTHROPIC_API_KEY at depth 0 (Agent SDK → Claude Code)
-			// Strip it from all subsequent spawns (Claude Code → tools like bash, git, npm)
-			const currentDepth = this.spawnDepth;
-			const shouldKeepAPIKey = currentDepth === 0;
-
-			if (!shouldKeepAPIKey) {
-				delete cleaned.ANTHROPIC_API_KEY;
-			}
+			// Note: ANTHROPIC_API_KEY remains in environment as Claude Code CLI
+			// requires it to authenticate with Anthropic's API. Security is
+			// enforced via SDK hooks (PreToolUse/PostToolUse) in user code.
 
 			return cleaned;
 		};
