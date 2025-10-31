@@ -136,26 +136,54 @@ export class JsTaskRunner extends TaskRunner {
 	}
 
 	/**
-	 * Globally patches child_process to strip n8n authentication tokens from
-	 * subprocess environments. This prevents n8n runner credentials from being
-	 * accessible to Claude Code or analyzed code.
-	 *
-	 * Note: ANTHROPIC_API_KEY is NOT stripped as Claude Code CLI requires it.
-	 * Security for ANTHROPIC_API_KEY is enforced via SDK hooks in user code.
+	 * Globally patches child_process to:
+	 * 1. Strip n8n authentication tokens from subprocess environments
+	 * 2. Automatically disable prompt caching for non-Anthropic models to prevent
+	 *    API errors when using models like Gemini via LiteLLM proxy
 	 */
 	private patchChildProcessGlobally() {
 		const childProcess = require('child_process');
 
-		const stripSensitiveEnvVars = (env?: NodeJS.ProcessEnv) => {
+		const isSpawningClaudeCode = (command: string, args?: readonly string[]): boolean => {
+			return (
+				command === 'node' &&
+				Array.isArray(args) &&
+				args.some((arg) => arg.includes('claude') || arg === '/usr/local/bin/claude')
+			);
+		};
+
+		const extractModelFromArgs = (args?: readonly string[]): string | null => {
+			if (!Array.isArray(args)) return null;
+			const modelIndex = args.findIndex((arg) => arg === '--model');
+			return modelIndex >= 0 && modelIndex + 1 < args.length ? args[modelIndex + 1] : null;
+		};
+
+		const isAnthropicModel = (model: string): boolean => {
+			const anthropicPatterns = /claude|sonnet|opus|haiku/i;
+			return anthropicPatterns.test(model);
+		};
+
+		const stripSensitiveEnvVars = (
+			command: string,
+			args?: readonly string[],
+			env?: NodeJS.ProcessEnv,
+		) => {
 			const cleaned = env ? { ...env } : { ...process.env };
 
 			// Always strip n8n runner tokens from all subprocesses
 			delete cleaned.N8N_RUNNERS_GRANT_TOKEN;
 			delete cleaned.N8N_RUNNERS_AUTH_TOKEN;
 
-			// Note: ANTHROPIC_API_KEY remains in environment as Claude Code CLI
-			// requires it to authenticate with Anthropic's API. Security is
-			// enforced via SDK hooks (PreToolUse/PostToolUse) in user code.
+			// Smart prompt caching control for non-Anthropic models
+			if (isSpawningClaudeCode(command, args)) {
+				const modelName = extractModelFromArgs(args);
+
+				if (modelName && !isAnthropicModel(modelName)) {
+					// Non-Anthropic model detected (e.g., gemini, gpt) - disable caching
+					cleaned.DISABLE_PROMPT_CACHING = '1';
+				}
+				// For Anthropic models: keep caching enabled (don't set the var)
+			}
 
 			return cleaned;
 		};
@@ -166,11 +194,11 @@ export class JsTaskRunner extends TaskRunner {
 		const originalExecFile = childProcess.execFile;
 		const originalFork = childProcess.fork;
 
-		// Patch spawn to strip n8n tokens
+		// Patch spawn to strip n8n tokens and handle model-specific caching
 		childProcess.spawn = (command: string, args?: any, options?: any) => {
 			const secureOptions = {
 				...options,
-				env: stripSensitiveEnvVars(options?.env),
+				env: stripSensitiveEnvVars(command, args, options?.env),
 			};
 			return originalSpawn.call(childProcess, command, args, secureOptions);
 		};
@@ -179,7 +207,7 @@ export class JsTaskRunner extends TaskRunner {
 		childProcess.exec = (command: string, options?: any, callback?: any) => {
 			const secureOptions = {
 				...options,
-				env: stripSensitiveEnvVars(options?.env),
+				env: stripSensitiveEnvVars(command, [], options?.env),
 			};
 			return originalExec.call(childProcess, command, secureOptions, callback);
 		};
@@ -188,7 +216,7 @@ export class JsTaskRunner extends TaskRunner {
 		childProcess.execFile = (file: string, args?: any, options?: any, callback?: any) => {
 			const secureOptions = {
 				...options,
-				env: stripSensitiveEnvVars(options?.env),
+				env: stripSensitiveEnvVars(file, args, options?.env),
 			};
 			return originalExecFile.call(childProcess, file, args, secureOptions, callback);
 		};
@@ -197,7 +225,7 @@ export class JsTaskRunner extends TaskRunner {
 		childProcess.fork = (modulePath: string, args?: any, options?: any) => {
 			const secureOptions = {
 				...options,
-				env: stripSensitiveEnvVars(options?.env),
+				env: stripSensitiveEnvVars(modulePath, args, options?.env),
 			};
 			return originalFork.call(childProcess, modulePath, args, secureOptions);
 		};
