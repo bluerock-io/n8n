@@ -22,7 +22,8 @@
 				"N8N_VERSION",
 				"ENVIRONMENT",
 				"DEPLOYMENT_NAME",
-				"ANTHROPIC_API_KEY"
+				"ANTHROPIC_API_KEY",
+				"ANTHROPIC_BASE_URL"
 			],
 			"env-overrides": {
 				"NODE_FUNCTION_ALLOW_BUILTIN": "crypto,child_process",
