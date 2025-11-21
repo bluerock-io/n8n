@@ -31,25 +31,12 @@ COPY --from=node:22.21.0-alpine /usr/local/bin/npx /usr/local/bin/npx
 # Install Claude Code CLI globally
 RUN npm install -g @anthropic-ai/claude-code
 
-# Add JavaScript dependencies for Claude Agent SDK
-# Strategy: Delete node_modules entirely to avoid workspace: references in pnpm metadata
-# Then rebuild with npm from scratch using only required packages
-WORKDIR /opt/runners/task-runner-javascript
-RUN rm -rf node_modules package-lock.json pnpm-lock.yaml .pnpm && \
-    node -e "const pkg = require('./package.json'); \
-    Object.keys(pkg.dependencies || {}).forEach(k => { \
-        const val = pkg.dependencies[k]; \
-        if (val === 'catalog:' || val.startsWith('catalog:') || val.startsWith('workspace:')) \
-            delete pkg.dependencies[k]; \
-    }); \
-    Object.keys(pkg.devDependencies || {}).forEach(k => { \
-        const val = pkg.devDependencies[k]; \
-        if (val === 'catalog:' || val.startsWith('catalog:') || val.startsWith('workspace:')) \
-            delete pkg.devDependencies[k]; \
-    }); \
-    delete pkg.devDependencies; \
-    require('fs').writeFileSync('./package.json', JSON.stringify(pkg, null, 2));" && \
-    npm install --legacy-peer-deps && \
+# Add JavaScript dependencies for Claude Agent SDK to a separate location
+# Keep the original node_modules (has task-runner's core deps from pnpm)
+# Install our extras to /opt/extra-modules and add to NODE_PATH
+RUN mkdir -p /opt/extra-modules && \
+    cd /opt/extra-modules && \
+    npm init -y && \
     npm install --legacy-peer-deps \
     @anthropic-ai/claude-agent-sdk@latest \
     @anthropic-ai/sdk@latest \
