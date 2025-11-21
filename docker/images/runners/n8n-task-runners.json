@@ -12,6 +12,7 @@
 			"health-check-server-port": "5681",
 			"allowed-env": [
 				"PATH",
+				"NODE_PATH",
 				"SHELL",
 				"GENERIC_TIMEZONE",
 				"NODE_OPTIONS",
