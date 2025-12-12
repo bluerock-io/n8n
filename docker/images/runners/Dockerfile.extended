@@ -7,22 +7,30 @@
 # Key additions:
 # - Claude Code CLI for AI-powered code assistance
 # - System tools: git, bash, curl, npm, npx
-# - JavaScript dependencies: @anthropic-ai/claude-agent-sdk, @anthropic-ai/sdk, zod, moment
+# - JavaScript dependencies: @anthropic-ai/claude-agent-sdk, @anthropic-ai/sdk, moment
 # - Environment configured for Claude Code execution
 # ==============================================================================
 
 ARG BASE_IMAGE=n8nio/runners:latest
+
+# Stage to install system dependencies (base image removed apk package manager)
+FROM alpine:3.22 AS system-tools
+RUN apk add --no-cache git bash curl
 
 FROM ${BASE_IMAGE}
 
 # Switch to root for installations
 USER root
 
-# Install system dependencies required by Claude Code
+# Copy system dependencies from Alpine stage (base image removed apk)
 # git: Required for repository operations
 # bash: Required for executing shell commands
 # curl: Required for downloading files and API calls
-RUN apk add --no-cache git bash curl
+COPY --from=system-tools /usr/bin/git /usr/bin/git
+COPY --from=system-tools /usr/bin/bash /bin/bash
+COPY --from=system-tools /usr/bin/curl /usr/bin/curl
+COPY --from=system-tools /usr/lib /usr/lib
+COPY --from=system-tools /lib /lib
 
 # Install npm and npx from node_modules for package management
 COPY --from=node:22.21.0-alpine /usr/local/bin/npm /usr/local/bin/npm
