@@ -27,7 +27,7 @@ USER root
 # bash: Required for executing shell commands
 # curl: Required for downloading files and API calls
 COPY --from=system-tools /usr/bin/git /usr/bin/git
-COPY --from=system-tools /usr/bin/bash /bin/bash
+COPY --from=system-tools /bin/bash /bin/bash
 COPY --from=system-tools /usr/bin/curl /usr/bin/curl
 COPY --from=system-tools /usr/lib /usr/lib
 COPY --from=system-tools /lib /lib
