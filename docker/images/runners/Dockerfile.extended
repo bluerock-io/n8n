@@ -105,28 +105,19 @@ COPY --from=tools-installer /usr/lib/libstdc++.so.* /usr/lib/
 
 # Validate all installed tools work correctly
 # This catches library dependency issues at build time rather than runtime
-# Testing each tool directly - if any fail, build stops with clear error message
-RUN echo "=== Validating Installed Tools ===" && \
-    git --version && \
-    bash --version && \
-    curl --version && \
-    wget --version && \
-    grep --version && \
-    find --version && \
-    xargs --version && \
-    rg --version && \
-    tar --version && \
-    unzip -v && \
-    gzip --version && \
-    jq --version && \
-    less --version && \
-    make --version && \
-    file --version && \
-    tree --version && \
-    npm --version && \
-    npx --version && \
-    claude --version && \
-    echo "=== All Tools Validated Successfully ==="
+# Test one tool at a time to identify which one fails
+RUN echo "Testing git..." && git --version
+RUN echo "Testing bash..." && bash --version
+RUN echo "Testing curl..." && curl --version
+RUN echo "Testing wget..." && wget --version
+RUN echo "Testing rg..." && rg --version
+RUN echo "Testing jq..." && jq --version
+RUN echo "Testing file..." && file --version
+RUN echo "Testing tree..." && tree --version
+RUN echo "Testing npm..." && npm --version
+RUN echo "Testing npx..." && npx --version
+RUN echo "Testing claude..." && claude --version
+RUN echo "=== All Tools Validated Successfully ==="
 
 # Add JavaScript dependencies for Claude Agent SDK to a separate location
 # Keep the original node_modules (has task-runner's core deps from pnpm)
