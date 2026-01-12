@@ -16,8 +16,29 @@ ARG BASE_IMAGE=n8nio/runners:latest
 # Stage with full Alpine + Node.js to install tools and Claude Code
 FROM node:22.21.0-alpine AS tools-installer
 
-# Install system dependencies
-RUN apk add --no-cache git bash curl
+# Install comprehensive toolset for Claude Code static analysis
+# Core utilities: git, bash, curl, wget
+# Search tools: grep, find, ripgrep
+# Archive tools: tar, unzip, gzip
+# Text processing: jq (JSON), less, cat, head, tail
+# Build tools: make (for analyzing build systems)
+# Analysis: file (file type detection)
+RUN apk add --no-cache \
+    git \
+    bash \
+    curl \
+    wget \
+    grep \
+    findutils \
+    ripgrep \
+    tar \
+    unzip \
+    gzip \
+    jq \
+    less \
+    make \
+    file \
+    tree
 
 # Install Claude Code CLI globally
 RUN npm install -g @anthropic-ai/claude-code
@@ -27,33 +48,38 @@ FROM ${BASE_IMAGE}
 # Switch to root for installations
 USER root
 
-# Copy all necessary binaries and libraries from tools-installer
-# System tools
+# Copy all binaries from tools-installer
+# Core utilities
 COPY --from=tools-installer /usr/bin/git /usr/bin/git
 COPY --from=tools-installer /bin/bash /bin/bash
 COPY --from=tools-installer /usr/bin/curl /usr/bin/curl
+COPY --from=tools-installer /usr/bin/wget /usr/bin/wget
+COPY --from=tools-installer /usr/bin/rg /usr/bin/rg
+COPY --from=tools-installer /usr/bin/jq /usr/bin/jq
+COPY --from=tools-installer /usr/bin/less /usr/bin/less
+COPY --from=tools-installer /usr/bin/make /usr/bin/make
+COPY --from=tools-installer /usr/bin/file /usr/bin/file
+COPY --from=tools-installer /usr/bin/tree /usr/bin/tree
+COPY --from=tools-installer /usr/bin/find /usr/bin/find
+COPY --from=tools-installer /usr/bin/xargs /usr/bin/xargs
+COPY --from=tools-installer /bin/tar /bin/tar
+COPY --from=tools-installer /usr/bin/unzip /usr/bin/unzip
+COPY --from=tools-installer /bin/gzip /bin/gzip
+COPY --from=tools-installer /bin/grep /bin/grep
 
-# Node.js npm/npx with dependencies
+# Node.js npm/npx with full dependencies
 COPY --from=tools-installer /usr/local/bin/npm /usr/local/bin/npm
 COPY --from=tools-installer /usr/local/bin/npx /usr/local/bin/npx
 COPY --from=tools-installer /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
 
-# Claude Code CLI
+# Claude Code CLI with full dependencies
 COPY --from=tools-installer /usr/local/lib/node_modules/@anthropic-ai/claude-code /usr/local/lib/node_modules/@anthropic-ai/claude-code
 COPY --from=tools-installer /usr/local/bin/claude /usr/local/bin/claude
 
-# Required libraries (selective copy to avoid conflicts)
-COPY --from=tools-installer /usr/lib/libcurl.so.* /usr/lib/
-COPY --from=tools-installer /usr/lib/libnghttp2.so.* /usr/lib/
-COPY --from=tools-installer /usr/lib/libidn2.so.* /usr/lib/
-COPY --from=tools-installer /usr/lib/libssh2.so.* /usr/lib/
-COPY --from=tools-installer /usr/lib/libbrotlidec.so.* /usr/lib/
-COPY --from=tools-installer /usr/lib/libunistring.so.* /usr/lib/
-COPY --from=tools-installer /usr/lib/libpsl.so.* /usr/lib/
-COPY --from=tools-installer /lib/libz.so.* /lib/
-COPY --from=tools-installer /usr/lib/libzstd.so.* /usr/lib/
-COPY --from=tools-installer /lib/libcrypto.so.* /lib/
-COPY --from=tools-installer /lib/libssl.so.* /lib/
+# Copy ALL shared libraries from tools-installer to ensure everything works
+# This includes libpcre2 (needed by git) and all other dependencies
+COPY --from=tools-installer /usr/lib/ /usr/lib/
+COPY --from=tools-installer /lib/ /lib/
 
 # Add JavaScript dependencies for Claude Agent SDK to a separate location
 # Keep the original node_modules (has task-runner's core deps from pnpm)
