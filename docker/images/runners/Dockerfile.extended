@@ -77,19 +77,21 @@ COPY --from=tools-installer /usr/local/lib/node_modules/@anthropic-ai/claude-cod
 COPY --from=tools-installer /usr/local/bin/claude /usr/local/bin/claude
 
 # Copy only the specific shared libraries needed by our tools
-# This avoids overwriting base image libraries and breaking npm
-# Use RUN with conditional logic to handle libraries that might not exist
+# CRITICAL: Copy libpcre2 FIRST because /bin/sh needs it to run any RUN commands
+# Then we can use RUN commands for conditional copying of other libraries
+COPY --from=tools-installer /usr/lib/libpcre2-8.so.* /usr/lib/
+
+# Now we can run shell commands - copy remaining libraries with conditional logic
 RUN --mount=type=bind,from=tools-installer,source=/usr/lib,target=/src/usr/lib \
     --mount=type=bind,from=tools-installer,source=/lib,target=/src/lib \
     set -ex && \
-    # Core libraries for git, curl, and other tools (these should always exist)
-    cp -a /src/usr/lib/libpcre2-8.so.* /usr/lib/ && \
+    # Network libraries for curl and other tools
     cp -a /src/usr/lib/libcurl.so.* /usr/lib/ && \
     cp -a /src/usr/lib/libnghttp2.so.* /usr/lib/ && \
     cp -a /src/usr/lib/libidn2.so.* /usr/lib/ && \
     cp -a /src/usr/lib/libssh2.so.* /usr/lib/ && \
     cp -a /src/usr/lib/libunistring.so.* /usr/lib/ && \
-    # Compression libraries (may be in /usr/lib or /lib)
+    # Compression libraries (may be in /usr/lib or /lib depending on Alpine version)
     (cp -a /src/usr/lib/libz.so.* /usr/lib/ 2>/dev/null || cp -a /src/lib/libz.so.* /lib/ 2>/dev/null || true) && \
     (cp -a /src/usr/lib/libbz2.so.* /usr/lib/ 2>/dev/null || true) && \
     (cp -a /src/usr/lib/liblzma.so.* /usr/lib/ 2>/dev/null || true)
