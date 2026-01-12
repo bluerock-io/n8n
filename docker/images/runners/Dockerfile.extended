@@ -76,62 +76,32 @@ COPY --from=tools-installer /usr/local/lib/node_modules/npm /usr/local/lib/node_
 COPY --from=tools-installer /usr/local/lib/node_modules/@anthropic-ai/claude-code /usr/local/lib/node_modules/@anthropic-ai/claude-code
 COPY --from=tools-installer /usr/local/bin/claude /usr/local/bin/claude
 
-# Copy only the specific shared libraries needed by our tools
-# CRITICAL: Copy libpcre2 FIRST because /bin/sh needs it to run any RUN commands
-# Then we can use RUN commands for conditional copying of other libraries
+# Copy all required shared libraries from tools-installer
+# Using simple COPY commands instead of RUN with bind mounts to avoid execution issues
+# Core PCRE library (MUST be first - needed by /bin/sh)
 COPY --from=tools-installer /usr/lib/libpcre2-8.so.* /usr/lib/
 
-# Copy core network libraries with verbose logging (split for granularity)
-RUN --mount=type=bind,from=tools-installer,source=/usr/lib,target=/src/usr/lib \
-    echo "=== Copying Core Network Libraries ===" && \
-    echo "Copying libcurl..." && \
-    (cp -a /src/usr/lib/libcurl.so.* /usr/lib/ 2>/dev/null && echo "  [OK] libcurl copied" || echo "  [WARN] libcurl not found") && \
-    echo "Copying libnghttp2..." && \
-    (cp -a /src/usr/lib/libnghttp2.so.* /usr/lib/ 2>/dev/null && echo "  [OK] libnghttp2 copied" || echo "  [WARN] libnghttp2 not found") && \
-    echo "Copying libidn2..." && \
-    (cp -a /src/usr/lib/libidn2.so.* /usr/lib/ 2>/dev/null && echo "  [OK] libidn2 copied" || echo "  [WARN] libidn2 not found") && \
-    echo "Copying libssh2..." && \
-    (cp -a /src/usr/lib/libssh2.so.* /usr/lib/ 2>/dev/null && echo "  [OK] libssh2 copied" || echo "  [WARN] libssh2 not found") && \
-    echo "Copying libunistring..." && \
-    (cp -a /src/usr/lib/libunistring.so.* /usr/lib/ 2>/dev/null && echo "  [OK] libunistring copied" || echo "  [WARN] libunistring not found") && \
-    echo "=== Core Network Libraries Complete ==="
+# Network libraries (for curl, wget, git)
+COPY --from=tools-installer /usr/lib/libcurl.so.* /usr/lib/
+COPY --from=tools-installer /usr/lib/libnghttp2.so.* /usr/lib/
+COPY --from=tools-installer /usr/lib/libidn2.so.* /usr/lib/
+COPY --from=tools-installer /usr/lib/libssh2.so.* /usr/lib/
+COPY --from=tools-installer /usr/lib/libunistring.so.* /usr/lib/
 
-# Copy SSL/TLS libraries
-RUN --mount=type=bind,from=tools-installer,source=/usr/lib,target=/src/usr/lib \
-    echo "=== Copying SSL/TLS Libraries ===" && \
-    echo "Copying libssl..." && \
-    (cp -a /src/usr/lib/libssl.so.* /usr/lib/ 2>/dev/null && echo "  [OK] libssl copied" || echo "  [WARN] libssl not found") && \
-    echo "Copying libcrypto..." && \
-    (cp -a /src/usr/lib/libcrypto.so.* /usr/lib/ 2>/dev/null && echo "  [OK] libcrypto copied" || echo "  [WARN] libcrypto not found") && \
-    echo "=== SSL/TLS Libraries Complete ==="
+# SSL/TLS libraries (for HTTPS)
+COPY --from=tools-installer /usr/lib/libssl.so.* /usr/lib/
+COPY --from=tools-installer /usr/lib/libcrypto.so.* /usr/lib/
 
-# Copy compression libraries
-RUN --mount=type=bind,from=tools-installer,source=/usr/lib,target=/src/usr/lib \
-    --mount=type=bind,from=tools-installer,source=/lib,target=/src/lib \
-    echo "=== Copying Compression Libraries ===" && \
-    echo "Copying libz..." && \
-    (cp -a /src/usr/lib/libz.so.* /usr/lib/ 2>/dev/null && echo "  [OK] libz copied from /usr/lib" || \
-     cp -a /src/lib/libz.so.* /lib/ 2>/dev/null && echo "  [OK] libz copied from /lib" || \
-     echo "  [WARN] libz not found") && \
-    echo "Copying libbz2..." && \
-    (cp -a /src/usr/lib/libbz2.so.* /usr/lib/ 2>/dev/null && echo "  [OK] libbz2 copied" || echo "  [WARN] libbz2 not found") && \
-    echo "Copying liblzma..." && \
-    (cp -a /src/usr/lib/liblzma.so.* /usr/lib/ 2>/dev/null && echo "  [OK] liblzma copied" || echo "  [WARN] liblzma not found") && \
-    echo "=== Compression Libraries Complete ==="
+# Compression libraries
+COPY --from=tools-installer /usr/lib/libz.so.* /usr/lib/
+COPY --from=tools-installer /usr/lib/libbz2.so.* /usr/lib/
+COPY --from=tools-installer /usr/lib/liblzma.so.* /usr/lib/
 
-# Copy tool-specific libraries
-RUN --mount=type=bind,from=tools-installer,source=/usr/lib,target=/src/usr/lib \
-    --mount=type=bind,from=tools-installer,source=/lib,target=/src/lib \
-    echo "=== Copying Tool-Specific Libraries ===" && \
-    echo "Copying libonig (for jq)..." && \
-    (cp -a /src/usr/lib/libonig.so.* /usr/lib/ 2>/dev/null && echo "  [OK] libonig copied" || echo "  [WARN] libonig not found") && \
-    echo "Copying libmagic (for file)..." && \
-    (cp -a /src/usr/lib/libmagic.so.* /usr/lib/ 2>/dev/null && echo "  [OK] libmagic copied" || echo "  [WARN] libmagic not found") && \
-    echo "Copying libgcc_s..." && \
-    (cp -a /src/lib/libgcc_s.so.* /lib/ 2>/dev/null && echo "  [OK] libgcc_s copied" || echo "  [WARN] libgcc_s not found") && \
-    echo "Copying libstdc++..." && \
-    (cp -a /src/usr/lib/libstdc++.so.* /usr/lib/ 2>/dev/null && echo "  [OK] libstdc++ copied" || echo "  [WARN] libstdc++ not found") && \
-    echo "=== Tool-Specific Libraries Complete ==="
+# Tool-specific libraries
+COPY --from=tools-installer /usr/lib/libonig.so.* /usr/lib/
+COPY --from=tools-installer /usr/lib/libmagic.so.* /usr/lib/
+COPY --from=tools-installer /usr/lib/libstdc++.so.* /usr/lib/
+COPY --from=tools-installer /lib/libgcc_s.so.* /lib/
 
 # Validate all installed tools work correctly
 # This catches library dependency issues at build time rather than runtime
