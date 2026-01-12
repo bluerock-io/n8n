@@ -103,13 +103,6 @@ COPY --from=tools-installer /usr/lib/libstdc++.so.* /usr/lib/
 # - libssh2: Not installed (git doesn't need SSH for our use case)
 # Base image's compression libraries are sufficient
 
-# Validate all installed tools work correctly
-# Test if basic shell commands work first, then try tools
-RUN echo "Shell test OK"
-RUN which git
-RUN ls -la /usr/bin/git
-RUN git --version
-
 # Add JavaScript dependencies for Claude Agent SDK to a separate location
 # Keep the original node_modules (has task-runner's core deps from pnpm)
 # Install our extras to /opt/extra-modules and add to NODE_PATH
