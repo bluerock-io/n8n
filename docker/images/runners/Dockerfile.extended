@@ -85,23 +85,23 @@ COPY --from=tools-installer /usr/lib/libpcre2-8.so.* /usr/lib/
 COPY --from=tools-installer /usr/lib/libcurl.so.* /usr/lib/
 COPY --from=tools-installer /usr/lib/libnghttp2.so.* /usr/lib/
 COPY --from=tools-installer /usr/lib/libidn2.so.* /usr/lib/
-COPY --from=tools-installer /usr/lib/libssh2.so.* /usr/lib/
 COPY --from=tools-installer /usr/lib/libunistring.so.* /usr/lib/
 
 # SSL/TLS libraries (for HTTPS)
 COPY --from=tools-installer /usr/lib/libssl.so.* /usr/lib/
 COPY --from=tools-installer /usr/lib/libcrypto.so.* /usr/lib/
 
-# Compression libraries
-COPY --from=tools-installer /usr/lib/libz.so.* /usr/lib/
-COPY --from=tools-installer /usr/lib/libbz2.so.* /usr/lib/
-COPY --from=tools-installer /usr/lib/liblzma.so.* /usr/lib/
-
 # Tool-specific libraries
 COPY --from=tools-installer /usr/lib/libonig.so.* /usr/lib/
 COPY --from=tools-installer /usr/lib/libmagic.so.* /usr/lib/
 COPY --from=tools-installer /usr/lib/libstdc++.so.* /usr/lib/
-COPY --from=tools-installer /lib/libgcc_s.so.* /lib/
+
+# Note: Skipping libz, libbz2, liblzma, libgcc_s, libssh2:
+# - libz: Already in base image (causes symlink conflicts)
+# - libbz2, liblzma: Not installed in tools-installer
+# - libgcc_s: Not in tools-installer /lib
+# - libssh2: Not installed (git doesn't need SSH for our use case)
+# Base image's compression libraries are sufficient
 
 # Validate all installed tools work correctly
 # This catches library dependency issues at build time rather than runtime
