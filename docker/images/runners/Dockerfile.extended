@@ -105,27 +105,28 @@ COPY --from=tools-installer /usr/lib/libstdc++.so.* /usr/lib/
 
 # Validate all installed tools work correctly
 # This catches library dependency issues at build time rather than runtime
-RUN set -ex && \
+# Using set -x (not -e) so we see ALL tool results, not just first failure
+RUN set -x && \
     echo "=== Validating Installed Tools ===" && \
-    echo "git: $(git --version)" && \
-    echo "bash: $(bash --version | head -1)" && \
-    echo "curl: $(curl --version | head -1)" && \
-    echo "wget: $(wget --version | head -1)" && \
-    echo "grep: $(grep --version | head -1)" && \
-    echo "find: $(find --version | head -1)" && \
-    echo "xargs: $(xargs --version | head -1)" && \
-    echo "rg: $(rg --version)" && \
-    echo "tar: $(tar --version | head -1)" && \
-    echo "unzip: $(unzip -v | head -1)" && \
-    echo "gzip: $(gzip --version | head -1)" && \
-    echo "jq: $(jq --version)" && \
-    echo "less: $(less --version | head -1)" && \
-    echo "make: $(make --version | head -1)" && \
-    echo "file: $(file --version)" && \
-    echo "tree: $(tree --version)" && \
-    echo "npm: $(npm --version)" && \
-    echo "npx: $(npx --version)" && \
-    echo "claude: $(claude --version)" && \
+    echo "git: $(git --version || echo FAILED)" && \
+    echo "bash: $(bash --version | head -1 || echo FAILED)" && \
+    echo "curl: $(curl --version | head -1 || echo FAILED)" && \
+    echo "wget: $(wget --version | head -1 || echo FAILED)" && \
+    echo "grep: $(grep --version | head -1 || echo FAILED)" && \
+    echo "find: $(find --version | head -1 || echo FAILED)" && \
+    echo "xargs: $(xargs --version | head -1 || echo FAILED)" && \
+    echo "rg: $(rg --version || echo FAILED)" && \
+    echo "tar: $(tar --version | head -1 || echo FAILED)" && \
+    echo "unzip: $(unzip -v | head -1 || echo FAILED)" && \
+    echo "gzip: $(gzip --version | head -1 || echo FAILED)" && \
+    echo "jq: $(jq --version || echo FAILED)" && \
+    echo "less: $(less --version | head -1 || echo FAILED)" && \
+    echo "make: $(make --version | head -1 || echo FAILED)" && \
+    echo "file: $(file --version || echo FAILED)" && \
+    echo "tree: $(tree --version || echo FAILED)" && \
+    echo "npm: $(npm --version || echo FAILED)" && \
+    echo "npx: $(npx --version || echo FAILED)" && \
+    echo "claude: $(claude --version || echo FAILED)" && \
     echo "=== All Tools Validated Successfully ==="
 
 # Add JavaScript dependencies for Claude Agent SDK to a separate location
