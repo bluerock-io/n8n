@@ -10,7 +10,10 @@ extending the task runners image with Claude Code CLI integration.
 - [Image Extension Pattern](#image-extension-pattern)
 - [Critical Lessons Learned](#critical-lessons-learned)
 - [Configuration Guide](#configuration-guide)
+- [Build Monitoring with gcloud](#build-monitoring-with-gcloud)
 - [Troubleshooting](#troubleshooting)
+- [Adding Comprehensive Linux Toolset](#adding-comprehensive-linux-toolset)
+- [Quick Reference: Common Library Dependencies](#quick-reference-common-library-dependencies)
 
 ## Overview
 
@@ -316,7 +319,157 @@ docker run \
 
 **Limitation**: Still requires container restart to pick up config changes.
 
+## Build Monitoring with gcloud
+
+### Finding Latest Build Status
+
+After pushing code changes, a Cloud Build automatically triggers. Monitor it:
+
+**1. Find the latest build ID:**
+```bash
+gcloud builds list \
+  --region=us-east4 \
+  --limit=5 \
+  --format=json(id,createTime,status)
+```
+
+This returns recent builds with their IDs and status (QUEUED, WORKING, SUCCESS, FAILURE).
+
+**2. Fetch build logs:**
+```bash
+# Replace BUILD_ID with the actual ID from step 1
+gcloud logging read \
+  resource.labels.build_id=BUILD_ID \
+  --project=cloud-run-438015 \
+  --order=desc \
+  --limit=50 \
+  --format='value(timestamp,textPayload)'
+```
+
+**3. Monitor specific build steps:**
+```bash
+# Watch Step #2 (extended image build) specifically
+gcloud logging read \
+  resource.labels.build_id=BUILD_ID \
+  --project=cloud-run-438015 \
+  --order=asc \
+  --format='value(textPayload)' \
+  | grep "Step #2"
+```
+
+### Typical Workflow
+
+```bash
+# 1. Make changes and push
+git add .
+git commit -m "fix: your change"
+git push origin master
+
+# 2. Wait 30 seconds for build to queue
+sleep 30
+
+# 3. Find the new build
+BUILD_ID=$(gcloud builds list --region=us-east4 --limit=1 --format='value(id)')
+
+# 4. Monitor logs
+gcloud logging read \
+  resource.labels.build_id=$BUILD_ID \
+  --project=cloud-run-438015 \
+  --order=desc \
+  --limit=100 \
+  --format='value(timestamp,textPayload)'
+```
+
+### Build Step Breakdown
+
+- **Step #0** (build-artifacts): TypeScript compilation, ~4-6 minutes
+- **Step #1** (build-base-image): Base runner image, ~1-2 minutes
+- **Step #2** (build-extended-image): Claude Code + tools, ~1-2 minutes
+
+Total: ~6-10 minutes (with caching)
+
 ## Troubleshooting
+
+### Docker Image Extension Issues
+
+#### "Error loading shared library libXXX.so: No such file or directory"
+**Cause**: Binary depends on a library that wasn't copied from tools-installer
+
+**Diagnosis**: The error shows which tool and which library:
+```
+Error loading shared library libpcre2-8.so.0: No such file or directory (needed by git)
+```
+
+**Solution**: Copy the missing library in Dockerfile.extended:
+```dockerfile
+COPY --from=tools-installer /usr/lib/libpcre2-8.so.* /usr/lib/
+```
+
+#### "failed to eval symlinks: EvalSymlinks: too many links"
+**Cause**: Trying to copy a library that already exists in base image with conflicting symlinks
+
+**Example**: `libz.so.*` exists in python:3.13-alpine base image
+```
+COPY --from=tools-installer /usr/lib/libz.so.* /usr/lib/  # ❌ CONFLICTS
+```
+
+**Solution**: Skip libraries already in base image
+- Base image (python:3.13-alpine) includes: libz, libbz2, liblzma, libgcc_s
+- Only copy libraries that DON'T exist in base image
+- Use "WARN No files to copy" messages to identify which libraries don't exist
+
+#### "exit status 1" with no output from RUN commands
+**Cause**: Could be several issues:
+1. Unicode characters (✓, ⚠) in echo statements - busybox shell doesn't support UTF-8
+2. `set -e` combined with complex subshell logic
+3. RUN with bind mounts failing mysteriously in Kaniko
+
+**Solutions**:
+1. **Use ASCII only** in echo statements:
+   ```dockerfile
+   # ❌ Fails in busybox
+   echo "  ✓ Copied successfully"
+
+   # ✅ Works
+   echo "  [OK] Copied successfully"
+   ```
+
+2. **Remove set -e** if using conditional logic:
+   ```dockerfile
+   # ❌ Can fail silently with set -e
+   RUN set -e && (command || echo "warning")
+
+   # ✅ Better - let conditionals handle errors
+   RUN (command || echo "warning")
+   ```
+
+3. **Use simple COPY instead of RUN + bind mounts**:
+   ```dockerfile
+   # ❌ Mysteriously fails in Kaniko
+   RUN --mount=type=bind,from=tools-installer,source=/usr/lib,target=/src \
+       cp /src/lib*.so.* /usr/lib/
+
+   # ✅ Simple and reliable
+   COPY --from=tools-installer /usr/lib/libcurl.so.* /usr/lib/
+   ```
+
+#### Chicken-and-Egg: /bin/sh needs library to run RUN commands
+**Symptom**:
+```
+Error loading shared library libpcre2-8.so.0 (needed by /bin/sh)
+exit status 127
+```
+
+**Cause**: Busybox /bin/sh needs libpcre2 to execute, but you're trying to use a RUN command to copy libpcre2
+
+**Solution**: Copy libpcre2 using COPY (doesn't need shell) BEFORE any RUN commands:
+```dockerfile
+# ✅ COPY doesn't need /bin/sh - copy libpcre2 first
+COPY --from=tools-installer /usr/lib/libpcre2-8.so.* /usr/lib/
+
+# ✅ Now RUN commands work because /bin/sh has libpcre2
+RUN echo "Shell works now!"
+```
 
 ### Build Errors
 
@@ -428,6 +581,104 @@ Each step depends on the previous one completing successfully.
 - Activate at runtime when task-runner starts
 
 **No Docker changes needed** - these are source code modifications.
+
+## Adding Comprehensive Linux Toolset
+
+### Tools Installed for Claude Code Static Analysis
+
+The extended image includes comprehensive Linux tools for Claude Code's static analysis capabilities:
+
+**Core utilities**: git, bash, curl, wget
+**Search/find**: grep, find, xargs, ripgrep (rg)
+**Archives**: tar, unzip, gzip
+**Text processing**: jq, less
+**Build tools**: make
+**Analysis**: file, tree
+**Node.js**: npm, npx
+**AI**: Claude Code CLI
+
+### Library Dependencies Required
+
+Each tool requires specific shared libraries. Here's what we learned about library management:
+
+#### Libraries That MUST Be Copied
+
+```dockerfile
+# Core - needed by /bin/sh itself
+COPY --from=tools-installer /usr/lib/libpcre2-8.so.* /usr/lib/
+
+# Network libraries (curl, wget, git)
+COPY --from=tools-installer /usr/lib/libcurl.so.* /usr/lib/
+COPY --from=tools-installer /usr/lib/libnghttp2.so.* /usr/lib/
+COPY --from=tools-installer /usr/lib/libidn2.so.* /usr/lib/
+COPY --from=tools-installer /usr/lib/libunistring.so.* /usr/lib/
+
+# SSL/TLS (HTTPS support)
+COPY --from=tools-installer /usr/lib/libssl.so.* /usr/lib/
+COPY --from=tools-installer /usr/lib/libcrypto.so.* /usr/lib/
+
+# Tool-specific
+COPY --from=tools-installer /usr/lib/libonig.so.* /usr/lib/      # jq
+COPY --from=tools-installer /usr/lib/libmagic.so.* /usr/lib/    # file
+COPY --from=tools-installer /usr/lib/libstdc++.so.* /usr/lib/   # ripgrep
+```
+
+#### Libraries to SKIP (Already in Base Image)
+
+**DO NOT COPY** these - they cause "too many links" symlink conflicts:
+- `libz.so.*` - Already in python:3.13-alpine
+- `libbz2.so.*` - Not needed (not in tools-installer anyway)
+- `liblzma.so.*` - Not needed (not in tools-installer anyway)
+- `libgcc_s.so.*` - Not needed (not in tools-installer /lib)
+- `libssh2.so.*` - Not needed (git works fine for HTTPS repos)
+
+The base image's compression libraries are sufficient.
+
+### Multi-Stage Build for Tools
+
+Use a multi-stage build to install tools with Alpine package manager:
+
+```dockerfile
+# Stage 1: Install tools in Alpine environment (has apk)
+FROM node:22.21.0-alpine AS tools-installer
+RUN apk add --no-cache git bash curl wget ripgrep jq less make file tree
+
+# Stage 2: Copy binaries and libraries to base image (no apk)
+FROM ${BASE_IMAGE}
+USER root
+
+# Copy tool binaries
+COPY --from=tools-installer /usr/bin/git /usr/bin/git
+COPY --from=tools-installer /bin/bash /bin/bash
+# ... etc
+
+# Copy required libraries
+COPY --from=tools-installer /usr/lib/libpcre2-8.so.* /usr/lib/
+COPY --from=tools-installer /usr/lib/libcurl.so.* /usr/lib/
+# ... etc
+```
+
+**Why**: The base image has `apk-tools` removed for security, so we can't `apk add` directly. We install in a separate stage that has apk, then copy the results.
+
+### Tool Validation Layer
+
+**Always validate** that tools work after copying libraries:
+
+```dockerfile
+RUN set -x && \
+    echo "=== Validating Installed Tools ===" && \
+    echo "git: $(git --version || echo FAILED)" && \
+    echo "bash: $(bash --version | head -1 || echo FAILED)" && \
+    echo "curl: $(curl --version | head -1 || echo FAILED)" && \
+    # ... test each tool
+    echo "=== All Tools Validated Successfully ==="
+```
+
+**Benefits**:
+- Catches missing library dependencies at build time, not runtime
+- Shows exact version of each tool installed
+- Using `|| echo FAILED` ensures we see ALL results, not just first failure
+- Using `set -x` (not `set -ex`) shows all tests even if some fail
 
 ## Best Practices
 
@@ -546,7 +797,22 @@ This allows:
 - Only rebuild when necessary
 - Test Dockerfile changes locally first with small test images
 
+## Quick Reference: Common Library Dependencies
+
+| Tool | Required Libraries | Notes |
+|------|-------------------|-------|
+| git | libpcre2, libcurl, libnghttp2 | Core VCS tool |
+| bash | libpcre2 | Also used by /bin/sh |
+| curl | libcurl, libnghttp2, libidn2, libssl, libcrypto | HTTPS support |
+| wget | libssl, libcrypto | HTTPS support |
+| ripgrep (rg) | libstdc++, libgcc_s | C++ tool, fast grep |
+| jq | libonig | JSON processor |
+| file | libmagic | File type detection |
+| npm/npx | (node built-in) | From Node.js install |
+
+**Verification**: Build logs show "WARN No files to copy" for libraries that don't exist in tools-installer. This is expected and can be ignored if the tool still validates successfully.
+
 ---
 
-**Last Updated**: 2025-11-21
-**Based on**: n8n v1.121.0, task-runner-launcher v1.4.1
+**Last Updated**: 2026-01-12
+**Based on**: n8n v2.3.0, task-runner-launcher v1.4.2
