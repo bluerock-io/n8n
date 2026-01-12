@@ -76,10 +76,21 @@ COPY --from=tools-installer /usr/local/lib/node_modules/npm /usr/local/lib/node_
 COPY --from=tools-installer /usr/local/lib/node_modules/@anthropic-ai/claude-code /usr/local/lib/node_modules/@anthropic-ai/claude-code
 COPY --from=tools-installer /usr/local/bin/claude /usr/local/bin/claude
 
-# Copy ALL shared libraries from tools-installer to ensure everything works
-# This includes libpcre2 (needed by git) and all other dependencies
-COPY --from=tools-installer /usr/lib/ /usr/lib/
-COPY --from=tools-installer /lib/ /lib/
+# Copy only the specific shared libraries needed by our tools
+# This avoids overwriting base image libraries and breaking npm
+# Core libraries for git, curl, and other tools
+COPY --from=tools-installer /usr/lib/libpcre2-8.so.* /usr/lib/
+COPY --from=tools-installer /usr/lib/libcurl.so.* /usr/lib/
+COPY --from=tools-installer /usr/lib/libnghttp2.so.* /usr/lib/
+COPY --from=tools-installer /usr/lib/libidn2.so.* /usr/lib/
+COPY --from=tools-installer /usr/lib/libssh2.so.* /usr/lib/
+COPY --from=tools-installer /usr/lib/libunistring.so.* /usr/lib/
+COPY --from=tools-installer /usr/lib/libz.so.* /usr/lib/
+COPY --from=tools-installer /lib/libz.so.* /lib/ || true
+# Additional libraries for other tools
+COPY --from=tools-installer /usr/lib/libbz2.so.* /usr/lib/ || true
+COPY --from=tools-installer /usr/lib/liblzma.so.* /usr/lib/ || true
+COPY --from=tools-installer /lib/ld-musl-*.so.* /lib/ || true
 
 # Add JavaScript dependencies for Claude Agent SDK to a separate location
 # Keep the original node_modules (has task-runner's core deps from pnpm)
