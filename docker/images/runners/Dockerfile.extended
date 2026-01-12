@@ -96,6 +96,31 @@ RUN --mount=type=bind,from=tools-installer,source=/usr/lib,target=/src/usr/lib \
     (cp -a /src/usr/lib/libbz2.so.* /usr/lib/ 2>/dev/null || true) && \
     (cp -a /src/usr/lib/liblzma.so.* /usr/lib/ 2>/dev/null || true)
 
+# Validate all installed tools work correctly
+# This catches library dependency issues at build time rather than runtime
+RUN set -ex && \
+    echo "=== Validating Installed Tools ===" && \
+    echo "git: $(git --version)" && \
+    echo "bash: $(bash --version | head -1)" && \
+    echo "curl: $(curl --version | head -1)" && \
+    echo "wget: $(wget --version | head -1)" && \
+    echo "grep: $(grep --version | head -1)" && \
+    echo "find: $(find --version | head -1)" && \
+    echo "xargs: $(xargs --version | head -1)" && \
+    echo "rg: $(rg --version)" && \
+    echo "tar: $(tar --version | head -1)" && \
+    echo "unzip: $(unzip -v | head -1)" && \
+    echo "gzip: $(gzip --version | head -1)" && \
+    echo "jq: $(jq --version)" && \
+    echo "less: $(less --version | head -1)" && \
+    echo "make: $(make --version | head -1)" && \
+    echo "file: $(file --version)" && \
+    echo "tree: $(tree --version)" && \
+    echo "npm: $(npm --version)" && \
+    echo "npx: $(npx --version)" && \
+    echo "claude: $(claude --version)" && \
+    echo "=== All Tools Validated Successfully ==="
+
 # Add JavaScript dependencies for Claude Agent SDK to a separate location
 # Keep the original node_modules (has task-runner's core deps from pnpm)
 # Install our extras to /opt/extra-modules and add to NODE_PATH
