@@ -81,20 +81,40 @@ COPY --from=tools-installer /usr/local/bin/claude /usr/local/bin/claude
 # Then we can use RUN commands for conditional copying of other libraries
 COPY --from=tools-installer /usr/lib/libpcre2-8.so.* /usr/lib/
 
-# Now we can run shell commands - copy remaining libraries with conditional logic
+# Now we can run shell commands - copy remaining libraries with verbose logging
 RUN --mount=type=bind,from=tools-installer,source=/usr/lib,target=/src/usr/lib \
     --mount=type=bind,from=tools-installer,source=/lib,target=/src/lib \
-    set -ex && \
-    # Network libraries for curl and other tools
-    cp -a /src/usr/lib/libcurl.so.* /usr/lib/ && \
-    cp -a /src/usr/lib/libnghttp2.so.* /usr/lib/ && \
-    cp -a /src/usr/lib/libidn2.so.* /usr/lib/ && \
-    cp -a /src/usr/lib/libssh2.so.* /usr/lib/ && \
-    cp -a /src/usr/lib/libunistring.so.* /usr/lib/ && \
-    # Compression libraries (may be in /usr/lib or /lib depending on Alpine version)
-    (cp -a /src/usr/lib/libz.so.* /usr/lib/ 2>/dev/null || cp -a /src/lib/libz.so.* /lib/ 2>/dev/null || true) && \
-    (cp -a /src/usr/lib/libbz2.so.* /usr/lib/ 2>/dev/null || true) && \
-    (cp -a /src/usr/lib/liblzma.so.* /usr/lib/ 2>/dev/null || true)
+    set -e && \
+    echo "=== Copying Tool Dependencies ===" && \
+    # Core network libraries (REQUIRED for curl, wget, git)
+    echo "Copying libcurl..." && \
+    (cp -a /src/usr/lib/libcurl.so.* /usr/lib/ 2>/dev/null && echo "  ✓ libcurl copied" || echo "  ⚠ libcurl not found (continuing...)") && \
+    echo "Copying libnghttp2..." && \
+    (cp -a /src/usr/lib/libnghttp2.so.* /usr/lib/ 2>/dev/null && echo "  ✓ libnghttp2 copied" || echo "  ⚠ libnghttp2 not found (continuing...)") && \
+    echo "Copying libidn2..." && \
+    (cp -a /src/usr/lib/libidn2.so.* /usr/lib/ 2>/dev/null && echo "  ✓ libidn2 copied" || echo "  ⚠ libidn2 not found (continuing...)") && \
+    echo "Copying libssh2..." && \
+    (cp -a /src/usr/lib/libssh2.so.* /usr/lib/ 2>/dev/null && echo "  ✓ libssh2 copied" || echo "  ⚠ libssh2 not found (continuing...)") && \
+    echo "Copying libunistring..." && \
+    (cp -a /src/usr/lib/libunistring.so.* /usr/lib/ 2>/dev/null && echo "  ✓ libunistring copied" || echo "  ⚠ libunistring not found (continuing...)") && \
+    echo "Copying libssl..." && \
+    (cp -a /src/usr/lib/libssl.so.* /usr/lib/ 2>/dev/null && echo "  ✓ libssl copied" || echo "  ⚠ libssl not found (continuing...)") && \
+    echo "Copying libcrypto..." && \
+    (cp -a /src/usr/lib/libcrypto.so.* /usr/lib/ 2>/dev/null && echo "  ✓ libcrypto copied" || echo "  ⚠ libcrypto not found (continuing...)") && \
+    # Compression libraries (may be in different locations)
+    echo "Copying compression libraries..." && \
+    (cp -a /src/usr/lib/libz.so.* /usr/lib/ 2>/dev/null && echo "  ✓ libz copied from /usr/lib" || \
+     cp -a /src/lib/libz.so.* /lib/ 2>/dev/null && echo "  ✓ libz copied from /lib" || \
+     echo "  ⚠ libz not found (continuing...)") && \
+    (cp -a /src/usr/lib/libbz2.so.* /usr/lib/ 2>/dev/null && echo "  ✓ libbz2 copied" || echo "  ⚠ libbz2 not found (continuing...)") && \
+    (cp -a /src/usr/lib/liblzma.so.* /usr/lib/ 2>/dev/null && echo "  ✓ liblzma copied" || echo "  ⚠ liblzma not found (continuing...)") && \
+    # Additional libraries for other tools
+    echo "Copying additional tool dependencies..." && \
+    (cp -a /src/usr/lib/libonig.so.* /usr/lib/ 2>/dev/null && echo "  ✓ libonig copied (for jq)" || echo "  ⚠ libonig not found (continuing...)") && \
+    (cp -a /src/usr/lib/libmagic.so.* /usr/lib/ 2>/dev/null && echo "  ✓ libmagic copied (for file)" || echo "  ⚠ libmagic not found (continuing...)") && \
+    (cp -a /src/lib/libgcc_s.so.* /lib/ 2>/dev/null && echo "  ✓ libgcc_s copied" || echo "  ⚠ libgcc_s not found (continuing...)") && \
+    (cp -a /src/usr/lib/libstdc++.so.* /usr/lib/ 2>/dev/null && echo "  ✓ libstdc++ copied" || echo "  ⚠ libstdc++ not found (continuing...)") && \
+    echo "=== Library Copying Complete ==="
 
 # Validate all installed tools work correctly
 # This catches library dependency issues at build time rather than runtime
