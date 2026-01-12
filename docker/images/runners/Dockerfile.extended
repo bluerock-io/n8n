@@ -78,19 +78,21 @@ COPY --from=tools-installer /usr/local/bin/claude /usr/local/bin/claude
 
 # Copy only the specific shared libraries needed by our tools
 # This avoids overwriting base image libraries and breaking npm
-# Core libraries for git, curl, and other tools
-COPY --from=tools-installer /usr/lib/libpcre2-8.so.* /usr/lib/
-COPY --from=tools-installer /usr/lib/libcurl.so.* /usr/lib/
-COPY --from=tools-installer /usr/lib/libnghttp2.so.* /usr/lib/
-COPY --from=tools-installer /usr/lib/libidn2.so.* /usr/lib/
-COPY --from=tools-installer /usr/lib/libssh2.so.* /usr/lib/
-COPY --from=tools-installer /usr/lib/libunistring.so.* /usr/lib/
-COPY --from=tools-installer /usr/lib/libz.so.* /usr/lib/
-COPY --from=tools-installer /lib/libz.so.* /lib/ || true
-# Additional libraries for other tools
-COPY --from=tools-installer /usr/lib/libbz2.so.* /usr/lib/ || true
-COPY --from=tools-installer /usr/lib/liblzma.so.* /usr/lib/ || true
-COPY --from=tools-installer /lib/ld-musl-*.so.* /lib/ || true
+# Use RUN with conditional logic to handle libraries that might not exist
+RUN --mount=type=bind,from=tools-installer,source=/usr/lib,target=/src/usr/lib \
+    --mount=type=bind,from=tools-installer,source=/lib,target=/src/lib \
+    set -ex && \
+    # Core libraries for git, curl, and other tools (these should always exist)
+    cp -a /src/usr/lib/libpcre2-8.so.* /usr/lib/ && \
+    cp -a /src/usr/lib/libcurl.so.* /usr/lib/ && \
+    cp -a /src/usr/lib/libnghttp2.so.* /usr/lib/ && \
+    cp -a /src/usr/lib/libidn2.so.* /usr/lib/ && \
+    cp -a /src/usr/lib/libssh2.so.* /usr/lib/ && \
+    cp -a /src/usr/lib/libunistring.so.* /usr/lib/ && \
+    # Compression libraries (may be in /usr/lib or /lib)
+    (cp -a /src/usr/lib/libz.so.* /usr/lib/ 2>/dev/null || cp -a /src/lib/libz.so.* /lib/ 2>/dev/null || true) && \
+    (cp -a /src/usr/lib/libbz2.so.* /usr/lib/ 2>/dev/null || true) && \
+    (cp -a /src/usr/lib/liblzma.so.* /usr/lib/ 2>/dev/null || true)
 
 # Add JavaScript dependencies for Claude Agent SDK to a separate location
 # Keep the original node_modules (has task-runner's core deps from pnpm)
