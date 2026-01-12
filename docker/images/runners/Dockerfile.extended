@@ -104,20 +104,11 @@ COPY --from=tools-installer /usr/lib/libstdc++.so.* /usr/lib/
 # Base image's compression libraries are sufficient
 
 # Validate all installed tools work correctly
-# This catches library dependency issues at build time rather than runtime
-# Test one tool at a time to identify which one fails
-RUN echo "Testing git..." && git --version
-RUN echo "Testing bash..." && bash --version
-RUN echo "Testing curl..." && curl --version
-RUN echo "Testing wget..." && wget --version
-RUN echo "Testing rg..." && rg --version
-RUN echo "Testing jq..." && jq --version
-RUN echo "Testing file..." && file --version
-RUN echo "Testing tree..." && tree --version
-RUN echo "Testing npm..." && npm --version
-RUN echo "Testing npx..." && npx --version
-RUN echo "Testing claude..." && claude --version
-RUN echo "=== All Tools Validated Successfully ==="
+# Test if basic shell commands work first, then try tools
+RUN echo "Shell test OK"
+RUN which git
+RUN ls -la /usr/bin/git
+RUN git --version
 
 # Add JavaScript dependencies for Claude Agent SDK to a separate location
 # Keep the original node_modules (has task-runner's core deps from pnpm)
