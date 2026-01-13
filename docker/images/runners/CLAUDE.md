@@ -494,6 +494,27 @@ RUN npm install --legacy-peer-deps package-name
 
 ### Runtime Errors
 
+#### "Command failed: mkdir -p /tmp/..." or /tmp not writable
+**Cause**: `/tmp` directory doesn't exist or lacks proper permissions for runner user
+
+**Symptom**: Code using child_process to create temp directories fails:
+```javascript
+execSync('mkdir -p /tmp/mydir')  // ❌ Fails
+```
+
+**Solution**: Create `/tmp` with sticky bit BEFORE library copies in Dockerfile.extended:
+```dockerfile
+FROM ${BASE_IMAGE}
+USER root
+
+# Must be BEFORE library copies (Kaniko RUN bug kicks in after)
+RUN mkdir -p /tmp && chmod 1777 /tmp
+
+# Then copy libraries...
+```
+
+The `1777` permissions = sticky bit + world writable (standard for `/tmp`).
+
 #### "Cannot find module '@n8n/di'"
 **Cause**: Task-runner's core dependencies were deleted/missing
 
@@ -660,45 +681,104 @@ COPY --from=tools-installer /usr/lib/libcurl.so.* /usr/lib/
 
 **Why**: The base image has `apk-tools` removed for security, so we can't `apk add` directly. We install in a separate stage that has apk, then copy the results.
 
-### Tool Validation Layer
+### Critical: Kaniko RUN Command Limitation
 
-**Always validate** that tools work after copying libraries:
+**IMPORTANT DISCOVERY**: After copying libraries with COPY commands, **any subsequent RUN command fails in Kaniko** with mysterious "exit status 1" and no stderr output.
 
+**Symptoms**:
 ```dockerfile
-RUN set -x && \
-    echo "=== Validating Installed Tools ===" && \
-    echo "git: $(git --version || echo FAILED)" && \
-    echo "bash: $(bash --version | head -1 || echo FAILED)" && \
-    echo "curl: $(curl --version | head -1 || echo FAILED)" && \
-    # ... test each tool
-    echo "=== All Tools Validated Successfully ==="
+COPY --from=tools-installer /usr/lib/libcurl.so.* /usr/lib/
+COPY --from=tools-installer /usr/lib/libssl.so.* /usr/lib/
+# ... more library copies
+
+RUN echo "test"  # ❌ Fails with exit status 1, no output
+RUN npm install # ❌ Fails with exit status 1, no output
+RUN mkdir -p /tmp # ❌ Fails with exit status 1, no output
 ```
 
-**Benefits**:
-- Catches missing library dependencies at build time, not runtime
-- Shows exact version of each tool installed
-- Using `|| echo FAILED` ensures we see ALL results, not just first failure
-- Using `set -x` (not `set -ex`) shows all tests even if some fail
+Even the simplest commands fail. This appears to be a Kaniko bug when many library files are copied.
+
+**The Workaround Pattern**:
+
+```dockerfile
+# Stage 1: Install EVERYTHING in tools-installer (RUN works here)
+FROM node:22.21.0-alpine AS tools-installer
+
+RUN apk add --no-cache git bash curl...
+RUN npm install -g @anthropic-ai/claude-code
+RUN mkdir -p /opt/extra-modules && \
+    cd /opt/extra-modules && \
+    npm install @anthropic-ai/claude-agent-sdk moment
+
+# Stage 2: COPY EVERYTHING to final image (avoid RUN after library copies)
+FROM ${BASE_IMAGE}
+USER root
+
+# Do ANY RUN commands FIRST (before library copies)
+RUN mkdir -p /tmp && chmod 1777 /tmp
+
+# Copy binaries
+COPY --from=tools-installer /usr/bin/git /usr/bin/git
+# ...
+
+# Copy libraries
+COPY --from=tools-installer /usr/lib/libcurl.so.* /usr/lib/
+# ...
+
+# Copy installed packages
+COPY --from=tools-installer /opt/extra-modules /opt/extra-modules
+
+# ⚠️ NO RUN COMMANDS AFTER THIS POINT - they will fail!
+ENV SHELL=/bin/bash
+USER runner
+```
+
+**Why This Works**:
+1. All package installations happen in tools-installer (where RUN is fine)
+2. All setup RUN commands happen BEFORE library copies
+3. Only COPY and ENV commands after libraries (these work in Kaniko)
+4. Everything you need is installed in tools-installer and copied over
+
+### Tool Validation Layer
+
+**NOTE**: Build-time validation is currently not possible due to the Kaniko RUN bug described above. Even simple validation commands fail after library copies.
+
+**Alternative**: Verify tools work at runtime by testing them in your deployed container.
+
+```bash
+# Test in running container
+docker exec -it n8n-runners /bin/sh
+git --version
+curl --version
+jq --version
+claude --version
+node -e "require('@anthropic-ai/claude-agent-sdk')"
+```
 
 ## Best Practices
 
 ### DO ✅
 
-1. **Use npm in extended images** - Avoids pnpm store conflicts
-2. **Install extras to /opt/extra-modules** - Preserves core dependencies
-3. **Set NODE_PATH in both places** - allowed-env AND env-overrides
-4. **Use --legacy-peer-deps** - Handles version conflicts gracefully
-5. **Match upstream's cleanup logic** - Remove catalog: and workspace: refs thoroughly
-6. **Test builds early** - Each iteration takes ~30 minutes
+1. **Install ALL packages in tools-installer stage** - Avoids Kaniko RUN bug
+2. **Do setup RUN commands BEFORE library copies** - RUN works early in the stage
+3. **Use COPY for everything after libraries** - COPY works, RUN doesn't
+4. **Use npm in extended images** - Avoids pnpm store conflicts
+5. **Install extras to /opt/extra-modules** - Preserves core dependencies
+6. **Set NODE_PATH in both places** - allowed-env AND env-overrides
+7. **Use --legacy-peer-deps** - Handles version conflicts gracefully
+8. **Create /tmp early with 1777 permissions** - Needed for workspace operations
+9. **Test builds early** - Each iteration takes ~6-10 minutes with cache
 
 ### DON'T ❌
 
-1. **Don't delete node_modules** - Contains critical task-runner dependencies
-2. **Don't use pnpm in extended images** - Store location conflicts
-3. **Don't forget allowed-env** - env-overrides alone doesn't work
-4. **Don't expect hot-reload** - Config is cached, requires container restart
-5. **Don't skip comprehensive cleanup** - Check both dependencies AND devDependencies
-6. **Don't assume changes apply immediately** - Image must be rebuilt and redeployed
+1. **Don't use RUN after library copies** - Kaniko bug causes silent failures
+2. **Don't install packages in final stage** - Install in tools-installer, then COPY
+3. **Don't delete node_modules** - Contains critical task-runner dependencies
+4. **Don't use pnpm in extended images** - Store location conflicts
+5. **Don't forget allowed-env** - env-overrides alone doesn't work
+6. **Don't expect hot-reload** - Config is cached, requires container restart
+7. **Don't skip /tmp setup** - Claude Agent SDK needs writable workspace
+8. **Don't assume changes apply immediately** - Image must be rebuilt and redeployed
 
 ## File Reference
 
