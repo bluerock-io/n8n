@@ -102,6 +102,10 @@ COPY --from=tools-installer /usr/bin/make /usr/bin/make
 # git-remote-https, git-remote-http, and other protocol helpers
 COPY --from=tools-installer /usr/libexec/git-core /usr/libexec/git-core
 
+# Git templates (prevents "templates not found" warning)
+# Used when initializing new repos or cloning
+COPY --from=tools-installer /usr/share/git-core/templates /usr/share/git-core/templates
+
 # DO NOT COPY these (busybox applets - would corrupt /bin/busybox):
 # Verified via runtime inode testing - these are hardlinked to /bin/busybox:
 # - /usr/bin/wget (CONFIRMED: inode test showed hardlink to busybox)
