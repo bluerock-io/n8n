@@ -21,32 +21,35 @@ FROM python:3.13-alpine AS tools-installer
 RUN apk add --no-cache nodejs npm
 
 # Install comprehensive toolset for Claude Code static analysis
-# CRITICAL: Do NOT install grep, tar, gzip - they replace /bin/busybox with hardlinks!
-# When apk packages replace busybox applets, they hardlink to /bin/busybox.
-# This breaks ALL busybox applets when the file is copied.
-# Base image's busybox versions of these tools work fine.
+# CRITICAL: Only install packages that DON'T replace busybox applets!
 #
-# Safe to install:
-# - Tools from /usr/bin/ (not busybox applets): git, curl, wget, jq, ripgrep, etc.
-# - bash (standalone binary, not busybox applet)
-# - unzip (separate package, not in /bin/)
+# Packages that corrupt busybox (create hardlinks to /bin/busybox):
+# ❌ grep, tar, gzip - hardlink /bin/busybox → breaks ALL applets
+# ❌ unzip - hardlink confirmed via testing (busybox became unzip)
+# ❌ findutils (find, xargs) - replace busybox applets
+# ❌ less - replace busybox applet
+# ❌ coreutils - would replace busybox (mkdir, chmod, etc.)
 #
-# Core utilities: git, bash, curl, wget, coreutils (via busybox applets)
-# Search tools: find, ripgrep (grep via busybox)
-# Archive tools: unzip (tar/gzip via busybox)
-# Text processing: jq (JSON), less
-# Build tools: make (for analyzing build systems)
-# Analysis: file (file type detection)
+# When copied via Kaniko, hardlinks overwrite /bin/busybox in base image,
+# destroying all 300+ busybox applets (mkdir, chmod, rm, ls, cat, cp, mv, etc.)
+#
+# Safe packages (standalone binaries, NOT busybox applets):
+# ✅ git, bash, curl, wget - standalone programs
+# ✅ ripgrep (rg) - NOT the same as grep, standalone Rust program
+# ✅ jq - JSON processor, standalone
+# ✅ make - build tool, standalone
+# ✅ file - file type detection, standalone
+# ✅ tree - directory tree, standalone
+#
+# For busybox applets (grep, find, tar, gzip, unzip, less, etc.):
+# Use base image's busybox versions via 'busybox --install' setup
 RUN apk add --no-cache \
     git \
     bash \
     curl \
     wget \
-    findutils \
     ripgrep \
-    unzip \
     jq \
-    less \
     make \
     file \
     tree
@@ -80,19 +83,21 @@ RUN mkdir -p /tmp && chmod 1777 /tmp && \
 # not separate binaries. They're set up via 'busybox --install' in the RUN above.
 # Only copying tools that exist as real binaries:
 
-# Development tools from /usr/bin/ (safe - not busybox applets)
+# Development tools from /usr/bin/ (ONLY standalone binaries, NOT busybox applets)
 COPY --from=tools-installer /usr/bin/git /usr/bin/git
 COPY --from=tools-installer /usr/bin/curl /usr/bin/curl
 COPY --from=tools-installer /usr/bin/wget /usr/bin/wget
 COPY --from=tools-installer /usr/bin/rg /usr/bin/rg
 COPY --from=tools-installer /usr/bin/jq /usr/bin/jq
-COPY --from=tools-installer /usr/bin/less /usr/bin/less
 COPY --from=tools-installer /usr/bin/make /usr/bin/make
 COPY --from=tools-installer /usr/bin/file /usr/bin/file
 COPY --from=tools-installer /usr/bin/tree /usr/bin/tree
-COPY --from=tools-installer /usr/bin/find /usr/bin/find
-COPY --from=tools-installer /usr/bin/xargs /usr/bin/xargs
-COPY --from=tools-installer /usr/bin/unzip /usr/bin/unzip
+
+# DO NOT COPY these (busybox applets - would corrupt /bin/busybox):
+# - /usr/bin/unzip (CONFIRMED: corrupts busybox when copied)
+# - /usr/bin/find, /usr/bin/xargs (from findutils, busybox applets)
+# - /usr/bin/less (busybox applet)
+# Base image's busybox provides these via 'busybox --install' setup
 
 # ONLY copy bash from /bin/ - all other /bin/ tools are hardlinked to busybox!
 # In tools-installer, when apk packages (grep, tar, gzip, etc.) replace busybox applets,

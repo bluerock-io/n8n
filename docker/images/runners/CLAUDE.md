@@ -545,17 +545,38 @@ RUN apk add --no-cache \
     git \
     bash \
     curl \
-    findutils \
+    wget \
     ripgrep \
-    # ❌ DON'T add: grep, tar, gzip (would replace busybox)
-    # Base image's busybox versions work fine
+    jq \
+    make \
+    file \
+    tree \
+    # ❌ DON'T add these (they replace busybox applets via hardlinks):
+    # grep, tar, gzip - CONFIRMED corrupts busybox
+    # unzip - CONFIRMED corrupts busybox (test showed busybox became unzip)
+    # findutils (find, xargs) - replaces busybox applets
+    # less - replaces busybox applet
+    # coreutils (mkdir, chmod, etc.) - replaces busybox applets
 ```
 
+**Complete List of Dangerous Packages** (verified via testing and web research):
+
+| Package | Provides | Danger | Evidence |
+|---------|----------|--------|----------|
+| grep | grep, egrep, fgrep | ❌ HARDLINK | Creates /bin/grep ⇔ /bin/busybox |
+| tar | tar | ❌ HARDLINK | Replaces /bin/busybox |
+| gzip | gzip, gunzip | ❌ HARDLINK | Replaces /bin/busybox |
+| **unzip** | **unzip** | ❌ **HARDLINK** | **CONFIRMED: busybox became unzip in test** |
+| findutils | find, xargs | ❌ HARDLINK | Replaces busybox applets |
+| less | less | ❌ HARDLINK | Replaces busybox applet |
+| coreutils | mkdir, chmod, rm, cp, mv, ls, cat, etc. | ❌ HARDLINK | Replaces 100+ busybox applets |
+
 **Why Base Image's Busybox is Sufficient**:
-- Base image has working busybox with all essential applets
-- Busybox grep/tar/gzip work fine for Claude Code's needs
-- No need for GNU versions
+- Base image has working busybox with 300+ essential applets
+- Busybox versions work fine for Claude Code's static analysis needs
+- No need for GNU versions (busybox sufficient for shell operations)
 - Avoids hardlink corruption entirely
+- Maintains system stability
 
 ### Build Errors
 
