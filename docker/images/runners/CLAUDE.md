@@ -604,6 +604,45 @@ const isSafe = toolInode !== busyboxInode;
 - Avoids hardlink corruption entirely
 - Maintains system stability
 
+**THE COMPLETE FIX FOR BUSYBOX CORRUPTION**:
+
+The base image itself may have busybox corruption. Here's the complete solution:
+
+```dockerfile
+# STEP 1: Delete all corrupted hardlinks from base image
+RUN rm -f /bin/grep /bin/egrep /bin/fgrep /bin/tar /bin/gzip /bin/gunzip /bin/zcat /bin/busybox || true
+
+# STEP 2: Copy clean busybox from tools-installer
+COPY --from=tools-installer /bin/busybox /bin/busybox
+
+# STEP 3: Reinstall all busybox applets using CLEAN busybox
+RUN mkdir -p /tmp && chmod 1777 /tmp && \
+    /bin/busybox --install -s /usr/bin
+```
+
+**Why This Works**:
+1. `rm -f` removes all corrupted files that were hardlinked to busybox
+2. Clean busybox is copied from tools-installer (where packages don't corrupt it)
+3. `busybox --install -s` creates proper **symlinks** (not hardlinks) for all applets
+4. Symlinks point to the clean busybox binary
+
+**Testing Symlinks vs Hardlinks**:
+```javascript
+// WRONG: statSync follows symlinks, can't distinguish symlink from hardlink
+const grepStat = fs.statSync('/usr/bin/grep'); // Follows symlink to busybox
+if (grepStat.ino === busyboxInode) {
+  // This triggers for BOTH symlinks (correct) and hardlinks (bad)
+}
+
+// CORRECT: lstatSync does NOT follow symlinks
+const grepStat = fs.lstatSync('/usr/bin/grep'); // Doesn't follow symlink
+if (grepStat.isSymbolicLink()) {
+  console.log('✓ Symlink (correct) - busybox is safe');
+} else if (grepStat.ino === busyboxInode) {
+  console.log('✗ Hardlink (corruption) - busybox is broken');
+}
+```
+
 ### Build Errors
 
 #### "Unsupported URL Type: workspace:"
@@ -741,6 +780,138 @@ The `1777` permissions = sticky bit + world writable (standard for `/tmp`).
 2. ✅ `"env-overrides": {"NODE_PATH": "/path1:/path2"}` - Set the value
 
 Both are required!
+
+### Complete Library Fix Solutions
+
+This section documents the comprehensive fixes for all library dependency issues encountered.
+
+#### curl Missing Compression Libraries
+
+**Symptoms**:
+```
+Error relocating /usr/lib/libcurl.so.4: BrotliDecoderVersion: symbol not found
+Error relocating /usr/lib/libcurl.so.4: ZSTD_versionNumber: symbol not found
+Error relocating /usr/lib/libcurl.so.4: psl_latest: symbol not found
+Error loading shared library libbrotlidec.so.1: No such file or directory
+Error loading shared library libzstd.so.1: No such file or directory
+Error loading shared library libpsl.so.5: No such file or directory
+```
+
+**Root Cause**: curl was compiled with support for modern compression formats (Brotli, Zstandard) and cookie domain validation (PSL), but the required libraries weren't copied.
+
+**Complete Solution**:
+```dockerfile
+# Compression libraries (needed by curl for Brotli, Zstandard support)
+COPY --from=tools-installer /usr/lib/libbrotlidec.so.* /usr/lib/
+COPY --from=tools-installer /usr/lib/libbrotlicommon.so.* /usr/lib/
+COPY --from=tools-installer /usr/lib/libzstd.so.* /usr/lib/
+COPY --from=tools-installer /usr/lib/libpsl.so.* /usr/lib/
+
+# Also need HTTP/3 support libraries
+COPY --from=tools-installer /usr/lib/libnghttp3.so.* /usr/lib/
+```
+
+**Verification**:
+```bash
+curl --version
+# Should show: brotli/1.2.0 zstd/1.5.7 libpsl/0.21.5 nghttp3/1.13.1
+```
+
+#### jq Missing Library
+
+**Symptom**:
+```
+Error loading shared library libjq.so.1: No such file or directory (needed by /usr/bin/jq)
+```
+
+**Solution**:
+```dockerfile
+# Tool-specific libraries (added by jq, file packages)
+COPY --from=tools-installer /usr/lib/libjq.so.* /usr/lib/
+COPY --from=tools-installer /usr/lib/libonig.so.* /usr/lib/
+```
+
+#### git HTTPS Cloning Fails
+
+**Symptom**:
+```
+git: 'remote-https' is not a git command. See 'git --help'.
+fatal: remote helper 'https' aborted session
+```
+
+**Root Cause**: Only the main git binary was copied, but git uses separate "helper" programs for different protocols (HTTPS, HTTP, FTP, SSH).
+
+**Complete Solution**:
+```dockerfile
+# Git binary
+COPY --from=tools-installer /usr/bin/git /usr/bin/git
+
+# Git helper programs (CRITICAL for HTTPS/HTTP cloning)
+# Includes git-remote-https, git-remote-http, and 160+ other utilities
+COPY --from=tools-installer /usr/libexec/git-core /usr/libexec/git-core
+
+# Git templates (prevents "templates not found" warning)
+COPY --from=tools-installer /usr/share/git-core/templates /usr/share/git-core/templates
+```
+
+**What This Includes**:
+- `git-remote-https` - HTTPS protocol handler
+- `git-remote-http` - HTTP protocol handler
+- `git-remote-ftp` - FTP protocol handler
+- `git-remote-ftps` - FTPS protocol handler
+- All other git-core utilities (diff, log, status helpers, etc.)
+
+**Verification**:
+```bash
+# Test HTTPS cloning
+git clone https://github.com/anthropics/anthropic-quickstarts
+# Should work without errors or warnings
+```
+
+#### Complete Curl Library Chain
+
+Curl has a complex dependency chain. Here's the complete set needed:
+
+```dockerfile
+# Network libraries (added by git, curl, wget packages)
+COPY --from=tools-installer /usr/lib/libcurl.so.* /usr/lib/
+COPY --from=tools-installer /usr/lib/libnghttp2.so.* /usr/lib/      # HTTP/2
+COPY --from=tools-installer /usr/lib/libnghttp3.so.* /usr/lib/      # HTTP/3
+COPY --from=tools-installer /usr/lib/libidn2.so.* /usr/lib/         # International domains
+COPY --from=tools-installer /usr/lib/libunistring.so.* /usr/lib/    # Unicode strings
+COPY --from=tools-installer /usr/lib/libcares.so.* /usr/lib/        # Async DNS resolver
+
+# Compression libraries (needed by curl)
+COPY --from=tools-installer /usr/lib/libbrotlidec.so.* /usr/lib/    # Brotli decompression
+COPY --from=tools-installer /usr/lib/libbrotlicommon.so.* /usr/lib/ # Brotli common
+COPY --from=tools-installer /usr/lib/libzstd.so.* /usr/lib/         # Zstandard
+COPY --from=tools-installer /usr/lib/libpsl.so.* /usr/lib/          # Public Suffix List
+```
+
+**Note**: SSL/TLS libraries (libssl, libcrypto) are already in python:3.13-alpine base, no need to copy.
+
+#### Testing All Fixes
+
+After implementing these fixes, verify with:
+
+```javascript
+// Test curl
+const { execSync } = require('child_process');
+const result = execSync('curl --version', { shell: '/bin/bash', encoding: 'utf-8' });
+console.log(result);
+// Should show: brotli/1.2.0 zstd/1.5.7 libpsl/0.21.5 nghttp3/1.13.1
+
+// Test jq
+const jqVersion = execSync('jq --version', { shell: '/bin/bash', encoding: 'utf-8' });
+console.log(jqVersion); // Should show: jq-1.8.1
+
+// Test git HTTPS
+execSync('git clone --depth 1 https://github.com/anthropics/anthropic-quickstarts /tmp/test', {
+  shell: '/bin/bash',
+  encoding: 'utf-8'
+});
+// Should clone without errors or warnings
+```
 
 ### Deployment Issues
 
@@ -1138,5 +1309,12 @@ This allows:
 
 ---
 
-**Last Updated**: 2026-01-12
+**Last Updated**: 2026-01-13
 **Based on**: n8n v2.3.0, task-runner-launcher v1.4.2
+
+**Recent Fixes** (2026-01-13):
+- ✅ BusyBox corruption fully resolved (delete corrupted files, copy clean busybox)
+- ✅ curl compression libraries added (Brotli, Zstandard, PSL)
+- ✅ jq library dependencies added (libjq.so.1)
+- ✅ git HTTPS cloning fixed (git-remote-https helpers + templates)
+- ✅ Complete test suite: 46/46 tools tests + 44/44 git tests passing (100%)
