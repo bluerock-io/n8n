@@ -13,8 +13,12 @@
 
 ARG BASE_IMAGE=n8nio/runners:latest
 
-# Stage with full Alpine + Node.js to install tools and Claude Code
-FROM node:22.21.0-alpine AS tools-installer
+# Stage to install tools - using same Python Alpine base as runtime image
+# This ensures library compatibility (same Alpine version = compatible libraries)
+FROM python:3.13-alpine AS tools-installer
+
+# Install Node.js first (needed for npm and Claude Code CLI)
+RUN apk add --no-cache nodejs npm
 
 # Install comprehensive toolset for Claude Code static analysis
 # Core utilities: git, bash, curl, wget
