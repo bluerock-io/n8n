@@ -137,8 +137,10 @@ COPY --from=tools-installer /usr/lib/libcurl.so.* /usr/lib/
 COPY --from=tools-installer /usr/lib/libnghttp2.so.* /usr/lib/
 COPY --from=tools-installer /usr/lib/libidn2.so.* /usr/lib/
 COPY --from=tools-installer /usr/lib/libunistring.so.* /usr/lib/
+COPY --from=tools-installer /usr/lib/libcares.so.* /usr/lib/
 
 # Tool-specific libraries (added by jq, file packages)
+COPY --from=tools-installer /usr/lib/libjq.so.* /usr/lib/
 COPY --from=tools-installer /usr/lib/libonig.so.* /usr/lib/
 COPY --from=tools-installer /usr/lib/libmagic.so.* /usr/lib/
 
