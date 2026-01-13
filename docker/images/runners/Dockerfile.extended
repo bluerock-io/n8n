@@ -72,16 +72,18 @@ FROM ${BASE_IMAGE}
 # Switch to root for installations
 USER root
 
-# CRITICAL: Restore clean busybox from tools-installer FIRST
-# The base image may have corrupted busybox (grep/tar hardlinked to it)
-# Copy clean busybox from tools-installer to fix corruption
+# CRITICAL: Fix busybox corruption from base image
+# Base image has grep/tar/gzip hardlinked to corrupted busybox
+# Must DELETE corrupted hardlinks BEFORE copying clean busybox
+RUN rm -f /bin/grep /bin/egrep /bin/fgrep /bin/tar /bin/gzip /bin/gunzip /bin/zcat /bin/busybox || true
+
+# Copy clean busybox from tools-installer
 COPY --from=tools-installer /bin/busybox /bin/busybox
 
-# Create /tmp directory and set up busybox applets using the CLEAN busybox
+# Create /tmp directory and reinstall all busybox applets using CLEAN busybox
 # Must be done BEFORE any library copies (Kaniko RUN bug)
-# Set up essential busybox applets that Claude Agent SDK needs
 RUN mkdir -p /tmp && chmod 1777 /tmp && \
-    /bin/busybox --install -s /usr/bin || true
+    /bin/busybox --install -s /usr/bin
 
 # Copy all binaries from tools-installer
 # Note: Basic Unix utilities (mkdir, chmod, rm, etc.) are busybox applets,
@@ -147,6 +149,12 @@ COPY --from=tools-installer /usr/lib/libev.so.* /usr/lib/
 COPY --from=tools-installer /usr/lib/libidn2.so.* /usr/lib/
 COPY --from=tools-installer /usr/lib/libunistring.so.* /usr/lib/
 COPY --from=tools-installer /usr/lib/libcares.so.* /usr/lib/
+
+# Compression libraries (needed by curl for Brotli, Zstandard support)
+COPY --from=tools-installer /usr/lib/libbrotlidec.so.* /usr/lib/
+COPY --from=tools-installer /usr/lib/libbrotlicommon.so.* /usr/lib/
+COPY --from=tools-installer /usr/lib/libzstd.so.* /usr/lib/
+COPY --from=tools-installer /usr/lib/libpsl.so.* /usr/lib/
 
 # Tool-specific libraries (added by jq, file packages)
 COPY --from=tools-installer /usr/lib/libjq.so.* /usr/lib/
