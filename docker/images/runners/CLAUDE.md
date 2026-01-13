@@ -471,6 +471,92 @@ COPY --from=tools-installer /usr/lib/libpcre2-8.so.* /usr/lib/
 RUN echo "Shell works now!"
 ```
 
+#### CRITICAL: Busybox Hardlink Corruption
+
+**MOST IMPORTANT ISSUE** - This will break ALL shell commands if not handled correctly.
+
+**Symptom**:
+```
+mkdir: invalid option -- 'p'
+Usage: mkdir [OPTION]... PATTERNS [FILE]...
+```
+
+Every command (mkdir, ls, cat, tar, etc.) shows **grep's usage message** instead of working.
+
+**Root Cause**:
+
+When `apk add grep` (or tar, gzip, etc.) in Alpine, if the tool is also a busybox applet:
+1. Alpine replaces `/bin/busybox` with the full version (e.g., GNU grep)
+2. Creates **hardlink**: `/bin/grep` ⇔ `/bin/busybox` (same inode)
+3. Both files point to the SAME data (the grep binary)
+
+When you `COPY --from=tools-installer /bin/grep`:
+- Kaniko **preserves the hardlink**
+- Copies BOTH /bin/grep AND /bin/busybox as grep binary
+- **Overwrites the base image's real busybox** with grep!
+- All busybox applets break (mkdir, chmod, rm, ls, cat, cp, mv, touch, head, tail, etc.)
+
+**Detection**:
+```javascript
+// Runtime test to detect this issue
+const fs = require('fs');
+const busyboxStat = fs.statSync('/bin/busybox');
+const grepStat = fs.statSync('/bin/grep');
+
+if (busyboxStat.ino === grepStat.ino) {
+  console.log('HARDLINK DETECTED - busybox is corrupted!');
+}
+
+// Check what busybox actually is
+const { execSync } = require('child_process');
+const version = execSync('busybox --version 2>&1', { shell: '/bin/bash', encoding: 'utf-8' });
+if (version.includes('grep')) {
+  console.log('CONFIRMED: busybox has been replaced with grep!');
+}
+```
+
+**Solution - Category-Wide Rule**:
+
+**NEVER copy tools from /bin/ except bash:**
+
+```dockerfile
+# ✅ SAFE: Only copy bash from /bin/
+COPY --from=tools-installer /bin/bash /bin/bash
+
+# ❌ DANGEROUS: Never copy these (hardlinked to busybox)
+# COPY --from=tools-installer /bin/grep /bin/grep
+# COPY --from=tools-installer /bin/tar /bin/tar
+# COPY --from=tools-installer /bin/gzip /bin/gzip
+# COPY --from=tools-installer /bin/cat /bin/cat
+# COPY --from=tools-installer /bin/ls /bin/ls
+# etc.
+
+# ✅ SAFE: Copy tools from /usr/bin/ (not busybox applets)
+COPY --from=tools-installer /usr/bin/git /usr/bin/git
+COPY --from=tools-installer /usr/bin/curl /usr/bin/curl
+# etc.
+```
+
+**Prevent at Source - Don't Install Replacements**:
+
+```dockerfile
+# In tools-installer:
+RUN apk add --no-cache \
+    git \
+    bash \
+    curl \
+    findutils \
+    ripgrep \
+    # ❌ DON'T add: grep, tar, gzip (would replace busybox)
+    # Base image's busybox versions work fine
+```
+
+**Why Base Image's Busybox is Sufficient**:
+- Base image has working busybox with all essential applets
+- Busybox grep/tar/gzip work fine for Claude Code's needs
+- No need for GNU versions
+- Avoids hardlink corruption entirely
+
 ### Build Errors
 
 #### "Unsupported URL Type: workspace:"
@@ -492,7 +578,84 @@ RUN npm install --legacy-peer-deps package-name
 
 **Solution**: Use `npm install` instead of `pnpm add` in extended images.
 
+#### "no such file or directory" for /usr/local/bin/npm
+
+**Cause**: npm location differs between official node images and apk-installed nodejs
+
+**When using apk add nodejs npm** (in python:3.13-alpine):
+- npm binary: `/usr/bin/npm` (not /usr/local/bin/npm)
+- npx binary: `/usr/bin/npx` (not /usr/local/bin/npx)
+- npm packages: `/usr/lib/node_modules/npm` (not /usr/local/lib/node_modules/npm)
+
+**When using official node:alpine images**:
+- npm binary: `/usr/local/bin/npm`
+- npx binary: `/usr/local/bin/npx`
+- npm packages: `/usr/local/lib/node_modules/npm`
+
+**Solution**: Match COPY paths to your installation method:
+```dockerfile
+# If using apk add nodejs:
+COPY --from=tools-installer /usr/bin/npm /usr/bin/npm
+COPY --from=tools-installer /usr/lib/node_modules/npm /usr/lib/node_modules/npm
+
+# If using official node image:
+COPY --from=tools-installer /usr/local/bin/npm /usr/local/bin/npm
+COPY --from=tools-installer /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
+```
+
 ### Runtime Errors
+
+#### child_process returns "0\n" for all commands
+
+**Symptom**:
+```javascript
+const { execSync } = require('child_process');
+execSync('echo test', { encoding: 'utf-8' })  // Returns: "0\n"
+execSync('git --version', { encoding: 'utf-8' })  // Returns: "0\n"
+```
+
+Every command returns just "0\n" with no stderr, no actual execution.
+
+**Root Causes**:
+
+**Cause 1: Alpine Version Mismatch**
+- tools-installer uses node:22-alpine (Alpine 3.22)
+- Base uses python:3.13-alpine (Alpine 3.20)
+- libpcre2 version mismatch → /bin/sh crashes silently
+- Fix: Use **same base image** (python:3.13-alpine) for tools-installer
+
+**Cause 2: Busybox Hardlink Corruption** (see section above)
+- Copying /bin/grep overwrites /bin/busybox
+- All busybox applets break
+- Fix: Never copy from /bin/ except bash
+
+**Cause 3: Default Shell (/bin/sh) Broken**
+- /bin/sh is busybox, often has issues
+- /bin/bash works reliably
+- Fix: **Always specify shell: '/bin/bash'**
+
+**Solution Pattern**:
+```javascript
+// ❌ WRONG: Uses /bin/sh (default)
+execSync('mkdir -p /tmp/test')
+
+// ✅ CORRECT: Explicitly use bash
+execSync('mkdir -p /tmp/test', { shell: '/bin/bash' })
+
+// ✅ BEST: Create wrapper for consistency
+function exec(cmd, opts = {}) {
+  return execSync(cmd, { ...opts, shell: '/bin/bash' });
+}
+```
+
+**Diagnostic Approach**:
+
+When child_process fails, test in this order:
+1. Does fs module work? (bypasses shell entirely)
+2. Does bash work? `execSync('echo test', { shell: '/bin/bash' })`
+3. Does sh work? `execSync('echo test', { shell: '/bin/sh' })`
+4. Check for hardlink corruption: `fs.statSync('/bin/busybox').ino === fs.statSync('/bin/grep').ino`
+5. Check libpcre2: `fs.existsSync('/usr/lib/libpcre2-8.so.0')`
 
 #### "Command failed: mkdir -p /tmp/..." or /tmp not writable
 **Cause**: `/tmp` directory doesn't exist or lacks proper permissions for runner user
@@ -659,27 +822,61 @@ The base image's compression libraries are sufficient.
 
 Use a multi-stage build to install tools with Alpine package manager:
 
-```dockerfile
-# Stage 1: Install tools in Alpine environment (has apk)
-FROM node:22.21.0-alpine AS tools-installer
-RUN apk add --no-cache git bash curl wget ripgrep jq less make file tree
+**CRITICAL: Use the SAME base image for tools-installer to ensure library compatibility!**
 
-# Stage 2: Copy binaries and libraries to base image (no apk)
-FROM ${BASE_IMAGE}
+```dockerfile
+# Stage 1: Install tools - MUST use same base as runtime!
+# ❌ WRONG: FROM node:22.21.0-alpine AS tools-installer
+# Different Alpine version = incompatible libraries = child_process broken
+
+# ✅ CORRECT: Match the base image exactly
+FROM python:3.13-alpine AS tools-installer
+
+# Add Node.js to the Python image (needed for npm packages)
+RUN apk add --no-cache nodejs npm
+
+# Install tools - AVOID grep, tar, gzip (they corrupt busybox!)
+RUN apk add --no-cache \
+    git \
+    bash \
+    curl \
+    wget \
+    findutils \
+    ripgrep \
+    unzip \
+    jq \
+    less \
+    make \
+    file \
+    tree
+
+# Stage 2: Copy to final image
+FROM ${BASE_IMAGE}  # python:3.13-alpine based
 USER root
 
-# Copy tool binaries
+# Set up busybox applets FIRST (before copying anything)
+RUN mkdir -p /tmp && chmod 1777 /tmp && \
+    busybox --install -s /usr/bin || true
+
+# Copy tool binaries from /usr/bin/ (SAFE)
 COPY --from=tools-installer /usr/bin/git /usr/bin/git
-COPY --from=tools-installer /bin/bash /bin/bash
+COPY --from=tools-installer /usr/bin/curl /usr/bin/curl
 # ... etc
 
-# Copy required libraries
+# ONLY copy bash from /bin/ (never copy grep, tar, gzip - hardlinked!)
+COPY --from=tools-installer /bin/bash /bin/bash
+
+# Copy required libraries (matching Alpine version)
 COPY --from=tools-installer /usr/lib/libpcre2-8.so.* /usr/lib/
 COPY --from=tools-installer /usr/lib/libcurl.so.* /usr/lib/
 # ... etc
 ```
 
-**Why**: The base image has `apk-tools` removed for security, so we can't `apk add` directly. We install in a separate stage that has apk, then copy the results.
+**Why This Pattern**:
+1. **Same Alpine version** = compatible library versions = /bin/sh works = child_process works
+2. **busybox --install first** = sets up applets before copying anything
+3. **Never copy /bin/ tools** (except bash) = avoids hardlink corruption
+4. **apk add nodejs npm** = gets Node.js with correct paths for Alpine
 
 ### Critical: Kaniko RUN Command Limitation
 
