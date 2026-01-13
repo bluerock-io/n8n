@@ -98,6 +98,10 @@ COPY --from=tools-installer /usr/bin/rg /usr/bin/rg
 COPY --from=tools-installer /usr/bin/jq /usr/bin/jq
 COPY --from=tools-installer /usr/bin/make /usr/bin/make
 
+# Git helper programs (CRITICAL for HTTPS/HTTP cloning)
+# git-remote-https, git-remote-http, and other protocol helpers
+COPY --from=tools-installer /usr/libexec/git-core /usr/libexec/git-core
+
 # DO NOT COPY these (busybox applets - would corrupt /bin/busybox):
 # Verified via runtime inode testing - these are hardlinked to /bin/busybox:
 # - /usr/bin/wget (CONFIRMED: inode test showed hardlink to busybox)
