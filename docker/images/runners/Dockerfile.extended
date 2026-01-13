@@ -34,12 +34,12 @@ RUN apk add --no-cache nodejs npm
 # destroying all 300+ busybox applets (mkdir, chmod, rm, ls, cat, cp, mv, etc.)
 #
 # Safe packages (standalone binaries, NOT busybox applets):
-# ✅ git, bash, curl, wget - standalone programs
-# ✅ ripgrep (rg) - NOT the same as grep, standalone Rust program
-# ✅ jq - JSON processor, standalone
-# ✅ make - build tool, standalone
-# ✅ file - file type detection, standalone
-# ✅ tree - directory tree, standalone
+# ✅ git - Version control, too complex for busybox
+# ✅ bash - Full shell implementation
+# ✅ curl, wget - HTTP clients, standalone
+# ✅ ripgrep (rg) - Rust grep alternative, NOT in busybox
+# ✅ jq - JSON processor, NOT in busybox
+# ✅ make - Build tool, standalone
 #
 # For busybox applets (grep, find, tar, gzip, unzip, less, etc.):
 # Use base image's busybox versions via 'busybox --install' setup
@@ -50,9 +50,9 @@ RUN apk add --no-cache \
     wget \
     ripgrep \
     jq \
-    make \
-    file \
-    tree
+    make
+    # Removed tree, file - both are busybox applets that create hardlinks
+    # Base image's busybox versions work fine
 
 # Install Claude Code CLI globally
 RUN npm install -g @anthropic-ai/claude-code
@@ -90,14 +90,14 @@ COPY --from=tools-installer /usr/bin/wget /usr/bin/wget
 COPY --from=tools-installer /usr/bin/rg /usr/bin/rg
 COPY --from=tools-installer /usr/bin/jq /usr/bin/jq
 COPY --from=tools-installer /usr/bin/make /usr/bin/make
-COPY --from=tools-installer /usr/bin/file /usr/bin/file
-COPY --from=tools-installer /usr/bin/tree /usr/bin/tree
 
 # DO NOT COPY these (busybox applets - would corrupt /bin/busybox):
-# - /usr/bin/unzip (CONFIRMED: corrupts busybox when copied)
+# - /usr/bin/tree (CONFIRMED: corrupts busybox when copied - test showed busybox became tree)
+# - /usr/bin/file (busybox applet)
+# - /usr/bin/unzip (CONFIRMED: corrupts busybox when copied - earlier test)
 # - /usr/bin/find, /usr/bin/xargs (from findutils, busybox applets)
 # - /usr/bin/less (busybox applet)
-# Base image's busybox provides these via 'busybox --install' setup
+# Base image's busybox provides ALL of these via 'busybox --install' setup
 
 # ONLY copy bash from /bin/ - all other /bin/ tools are hardlinked to busybox!
 # In tools-installer, when apk packages (grep, tar, gzip, etc.) replace busybox applets,

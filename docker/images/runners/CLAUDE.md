@@ -561,15 +561,31 @@ RUN apk add --no-cache \
 
 **Complete List of Dangerous Packages** (verified via testing and web research):
 
-| Package | Provides | Danger | Evidence |
-|---------|----------|--------|----------|
-| grep | grep, egrep, fgrep | ❌ HARDLINK | Creates /bin/grep ⇔ /bin/busybox |
-| tar | tar | ❌ HARDLINK | Replaces /bin/busybox |
-| gzip | gzip, gunzip | ❌ HARDLINK | Replaces /bin/busybox |
-| **unzip** | **unzip** | ❌ **HARDLINK** | **CONFIRMED: busybox became unzip in test** |
-| findutils | find, xargs | ❌ HARDLINK | Replaces busybox applets |
-| less | less | ❌ HARDLINK | Replaces busybox applet |
-| coreutils | mkdir, chmod, rm, cp, mv, ls, cat, etc. | ❌ HARDLINK | Replaces 100+ busybox applets |
+| Package | Provides | Location | Danger | Evidence |
+|---------|----------|----------|--------|----------|
+| grep | grep, egrep, fgrep | /bin/ | ❌ HARDLINK | Creates /bin/grep ⇔ /bin/busybox |
+| tar | tar | /bin/ | ❌ HARDLINK | Replaces /bin/busybox |
+| gzip | gzip, gunzip | /bin/ | ❌ HARDLINK | Replaces /bin/busybox |
+| **unzip** | **unzip** | **/usr/bin/** | ❌ **HARDLINK** | **CONFIRMED: busybox became unzip** |
+| **tree** | **tree** | **/usr/bin/** | ❌ **HARDLINK** | **CONFIRMED: busybox became tree** |
+| **file** | **file** | **/usr/bin/** | ❌ **HARDLINK** | Busybox applet (per docs) |
+| findutils | find, xargs | /usr/bin/ | ❌ HARDLINK | Replaces busybox applets |
+| less | less | /usr/bin/ | ❌ HARDLINK | Replaces busybox applet |
+| coreutils | mkdir, chmod, rm, cp, mv, ls, cat, etc. | /usr/bin/ | ❌ HARDLINK | Replaces 100+ busybox applets |
+
+**Critical Insight**: Hardlinks can occur in **ANY directory** (/bin/ OR /usr/bin/)! The key is whether the tool is a busybox applet, NOT which directory it's in.
+
+**Safe Packages** (verified to NOT be busybox applets):
+
+| Package | Purpose | Safe? | Why |
+|---------|---------|-------|-----|
+| git | Version control | ✅ YES | Too complex for busybox |
+| bash | Full shell | ✅ YES | Standalone binary |
+| curl | HTTP client | ✅ YES | Complex networking, not in busybox |
+| wget | HTTP downloader | ✅ YES | Standalone utility |
+| ripgrep (rg) | Fast grep alternative | ✅ YES | Rust program, completely different from busybox grep |
+| jq | JSON processor | ✅ YES | NOT in busybox at all |
+| make | Build tool | ✅ YES | GNU make, not in busybox |
 
 **Why Base Image's Busybox is Sufficient**:
 - Base image has working busybox with 300+ essential applets
