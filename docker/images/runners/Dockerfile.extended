@@ -103,24 +103,30 @@ COPY --from=tools-installer /usr/lib/libstdc++.so.* /usr/lib/
 # - libssh2: Not installed (git doesn't need SSH for our use case)
 # Base image's compression libraries are sufficient
 
-# Add JavaScript dependencies for Claude Agent SDK to a separate location
-# Keep the original node_modules (has task-runner's core deps from pnpm)
-# Install our extras to /opt/extra-modules and add to NODE_PATH
-RUN mkdir -p /opt/extra-modules && \
-    cd /opt/extra-modules && \
-    npm init -y && \
-    npm install --legacy-peer-deps \
-    @anthropic-ai/claude-agent-sdk@latest \
-    @anthropic-ai/sdk@latest \
-    moment@2.30.1
+# TODO: Add JavaScript dependencies for Claude Agent SDK
+# Currently commented out due to Kaniko issue with RUN commands after library copies
+# Will need to either:
+# 1. Install at runtime via init container
+# 2. Debug why RUN commands fail after COPY in Kaniko
+# 3. Use different build tool (buildkit instead of kaniko)
+#
+# RUN mkdir -p /opt/extra-modules && \
+#     cd /opt/extra-modules && \
+#     npm init -y && \
+#     npm install --legacy-peer-deps \
+#     @anthropic-ai/claude-agent-sdk@latest \
+#     @anthropic-ai/sdk@latest \
+#     moment@2.30.1
 
 # Change default shell to bash (required by Claude Code)
 ENV SHELL=/bin/bash
 
-# Ensure claude is executable and create config directory for runner user
-RUN chmod +x /usr/local/bin/claude && \
-    mkdir -p /home/runner/.config/claude && \
-    chown -R runner:runner /home/runner/.config
+# TODO: Claude config directory setup
+# Also failing due to Kaniko RUN issue
+# Can be created at runtime if needed
+# RUN chmod +x /usr/local/bin/claude && \
+#     mkdir -p /home/runner/.config/claude && \
+#     chown -R runner:runner /home/runner/.config
 
 # Switch back to runner user
 USER runner
