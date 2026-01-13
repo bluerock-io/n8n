@@ -566,8 +566,9 @@ RUN apk add --no-cache \
 | grep | grep, egrep, fgrep | /bin/ | ❌ HARDLINK | Creates /bin/grep ⇔ /bin/busybox |
 | tar | tar | /bin/ | ❌ HARDLINK | Replaces /bin/busybox |
 | gzip | gzip, gunzip | /bin/ | ❌ HARDLINK | Replaces /bin/busybox |
-| **unzip** | **unzip** | **/usr/bin/** | ❌ **HARDLINK** | **CONFIRMED: busybox became unzip** |
-| **tree** | **tree** | **/usr/bin/** | ❌ **HARDLINK** | **CONFIRMED: busybox became tree** |
+| **unzip** | **unzip** | **/usr/bin/** | ❌ **HARDLINK** | **CONFIRMED: busybox became unzip (test)** |
+| **tree** | **tree** | **/usr/bin/** | ❌ **HARDLINK** | **CONFIRMED: busybox became tree (test)** |
+| **wget** | **wget** | **/usr/bin/** | ❌ **HARDLINK** | **CONFIRMED: inode 15379 = busybox inode** |
 | **file** | **file** | **/usr/bin/** | ❌ **HARDLINK** | Busybox applet (per docs) |
 | findutils | find, xargs | /usr/bin/ | ❌ HARDLINK | Replaces busybox applets |
 | less | less | /usr/bin/ | ❌ HARDLINK | Replaces busybox applet |
@@ -575,17 +576,26 @@ RUN apk add --no-cache \
 
 **Critical Insight**: Hardlinks can occur in **ANY directory** (/bin/ OR /usr/bin/)! The key is whether the tool is a busybox applet, NOT which directory it's in.
 
-**Safe Packages** (verified to NOT be busybox applets):
+**Safe Packages** (verified via inode testing to NOT be busybox applets):
 
-| Package | Purpose | Safe? | Why |
-|---------|---------|-------|-----|
-| git | Version control | ✅ YES | Too complex for busybox |
-| bash | Full shell | ✅ YES | Standalone binary |
-| curl | HTTP client | ✅ YES | Complex networking, not in busybox |
-| wget | HTTP downloader | ✅ YES | Standalone utility |
+| Package | Purpose | Safe? | Verification Method |
+|---------|---------|-------|---------------------|
+| git | Version control | ✅ YES | Too complex for busybox, different binary |
+| bash | Full shell | ✅ YES | Standalone binary, not busybox applet |
+| **curl** | **HTTP client** | ✅ **YES** | **VERIFIED: inode 15376 ≠ busybox inode 15379** |
 | ripgrep (rg) | Fast grep alternative | ✅ YES | Rust program, completely different from busybox grep |
 | jq | JSON processor | ✅ YES | NOT in busybox at all |
 | make | Build tool | ✅ YES | GNU make, not in busybox |
+
+**Inode Verification Methodology**:
+```javascript
+// Test any tool before adding to Dockerfile
+const fs = require('fs');
+const toolInode = fs.statSync('/usr/bin/TOOL').ino;
+const busyboxInode = fs.statSync('/bin/busybox').ino;
+const isSafe = toolInode !== busyboxInode;
+// If isSafe = true, tool can be safely copied
+```
 
 **Why Base Image's Busybox is Sufficient**:
 - Base image has working busybox with 300+ essential applets

@@ -47,12 +47,12 @@ RUN apk add --no-cache \
     git \
     bash \
     curl \
-    wget \
     ripgrep \
     jq \
     make
+    # Removed wget - busybox applet (CONFIRMED via inode test: hardlinked to busybox)
     # Removed tree, file - both are busybox applets that create hardlinks
-    # Base image's busybox versions work fine
+    # curl handles downloads, busybox provides wget/tree/file applets
 
 # Install Claude Code CLI globally
 RUN npm install -g @anthropic-ai/claude-code
@@ -83,18 +83,20 @@ RUN mkdir -p /tmp && chmod 1777 /tmp && \
 # not separate binaries. They're set up via 'busybox --install' in the RUN above.
 # Only copying tools that exist as real binaries:
 
-# Development tools from /usr/bin/ (ONLY standalone binaries, NOT busybox applets)
+# Development tools from /usr/bin/ (ONLY verified standalone binaries)
+# Each tool verified via inode testing to ensure NOT hardlinked to busybox
 COPY --from=tools-installer /usr/bin/git /usr/bin/git
 COPY --from=tools-installer /usr/bin/curl /usr/bin/curl
-COPY --from=tools-installer /usr/bin/wget /usr/bin/wget
 COPY --from=tools-installer /usr/bin/rg /usr/bin/rg
 COPY --from=tools-installer /usr/bin/jq /usr/bin/jq
 COPY --from=tools-installer /usr/bin/make /usr/bin/make
 
 # DO NOT COPY these (busybox applets - would corrupt /bin/busybox):
-# - /usr/bin/tree (CONFIRMED: corrupts busybox when copied - test showed busybox became tree)
+# Verified via runtime inode testing - these are hardlinked to /bin/busybox:
+# - /usr/bin/wget (CONFIRMED: inode test showed hardlink to busybox)
+# - /usr/bin/tree (CONFIRMED: busybox became tree in test)
 # - /usr/bin/file (busybox applet)
-# - /usr/bin/unzip (CONFIRMED: corrupts busybox when copied - earlier test)
+# - /usr/bin/unzip (CONFIRMED: busybox became unzip in earlier test)
 # - /usr/bin/find, /usr/bin/xargs (from findutils, busybox applets)
 # - /usr/bin/less (busybox applet)
 # Base image's busybox provides ALL of these via 'busybox --install' setup
