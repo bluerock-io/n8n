@@ -100,6 +100,9 @@ COPY --from=tools-installer /usr/local/bin/claude /usr/local/bin/claude
 # Since tools-installer and base both use python:3.13-alpine, many libraries already exist
 # Copying identical libraries causes "too many links" symlink conflicts
 
+# CRITICAL: libpcre2 needed by /bin/sh and git (NOT in base python image!)
+COPY --from=tools-installer /usr/lib/libpcre2-8.so.* /usr/lib/
+
 # Network libraries (added by git, curl, wget packages)
 COPY --from=tools-installer /usr/lib/libcurl.so.* /usr/lib/
 COPY --from=tools-installer /usr/lib/libnghttp2.so.* /usr/lib/
@@ -111,7 +114,6 @@ COPY --from=tools-installer /usr/lib/libonig.so.* /usr/lib/
 COPY --from=tools-installer /usr/lib/libmagic.so.* /usr/lib/
 
 # Note: NOT copying these - already in python:3.13-alpine base:
-# - libpcre2 (already there, /bin/sh uses it)
 # - libssl, libcrypto (Python needs these, already installed)
 # - libstdc++ (C++ stdlib, already in base)
 # - libz, libbz2, liblzma (compression libs, already there)
