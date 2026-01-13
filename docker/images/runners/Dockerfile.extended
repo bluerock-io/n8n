@@ -72,11 +72,16 @@ FROM ${BASE_IMAGE}
 # Switch to root for installations
 USER root
 
-# Create /tmp directory and set up busybox applets
+# CRITICAL: Restore clean busybox from tools-installer FIRST
+# The base image may have corrupted busybox (grep/tar hardlinked to it)
+# Copy clean busybox from tools-installer to fix corruption
+COPY --from=tools-installer /bin/busybox /bin/busybox
+
+# Create /tmp directory and set up busybox applets using the CLEAN busybox
 # Must be done BEFORE any library copies (Kaniko RUN bug)
 # Set up essential busybox applets that Claude Agent SDK needs
 RUN mkdir -p /tmp && chmod 1777 /tmp && \
-    busybox --install -s /usr/bin || true
+    /bin/busybox --install -s /usr/bin || true
 
 # Copy all binaries from tools-installer
 # Note: Basic Unix utilities (mkdir, chmod, rm, etc.) are busybox applets,
@@ -135,6 +140,10 @@ COPY --from=tools-installer /usr/lib/libpcre2-8.so.* /usr/lib/
 # Network libraries (added by git, curl, wget packages)
 COPY --from=tools-installer /usr/lib/libcurl.so.* /usr/lib/
 COPY --from=tools-installer /usr/lib/libnghttp2.so.* /usr/lib/
+COPY --from=tools-installer /usr/lib/libnghttp3.so.* /usr/lib/
+COPY --from=tools-installer /usr/lib/libngtcp2.so.* /usr/lib/
+COPY --from=tools-installer /usr/lib/libngtcp2_crypto_quictls.so.* /usr/lib/
+COPY --from=tools-installer /usr/lib/libev.so.* /usr/lib/
 COPY --from=tools-installer /usr/lib/libidn2.so.* /usr/lib/
 COPY --from=tools-installer /usr/lib/libunistring.so.* /usr/lib/
 COPY --from=tools-installer /usr/lib/libcares.so.* /usr/lib/
