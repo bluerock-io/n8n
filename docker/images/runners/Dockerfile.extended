@@ -21,13 +21,14 @@ FROM python:3.13-alpine AS tools-installer
 RUN apk add --no-cache nodejs npm
 
 # Install comprehensive toolset for Claude Code static analysis
-# Core utilities: git, bash, curl, wget
+# Core utilities: git, bash, curl, wget, coreutils (mkdir, chmod, etc.)
 # Search tools: grep, find, ripgrep
 # Archive tools: tar, unzip, gzip
 # Text processing: jq (JSON), less, cat, head, tail
 # Build tools: make (for analyzing build systems)
 # Analysis: file (file type detection)
 RUN apk add --no-cache \
+    coreutils \
     git \
     bash \
     curl \
@@ -67,7 +68,20 @@ USER root
 RUN mkdir -p /tmp && chmod 1777 /tmp
 
 # Copy all binaries from tools-installer
-# Core utilities
+# Coreutils (essential Unix commands needed by Claude Agent SDK)
+COPY --from=tools-installer /usr/bin/mkdir /usr/bin/mkdir
+COPY --from=tools-installer /usr/bin/chmod /usr/bin/chmod
+COPY --from=tools-installer /usr/bin/chown /usr/bin/chown
+COPY --from=tools-installer /usr/bin/rm /usr/bin/rm
+COPY --from=tools-installer /usr/bin/cp /usr/bin/cp
+COPY --from=tools-installer /usr/bin/mv /usr/bin/mv
+COPY --from=tools-installer /usr/bin/ls /usr/bin/ls
+COPY --from=tools-installer /usr/bin/cat /usr/bin/cat
+COPY --from=tools-installer /usr/bin/touch /usr/bin/touch
+COPY --from=tools-installer /usr/bin/head /usr/bin/head
+COPY --from=tools-installer /usr/bin/tail /usr/bin/tail
+
+# Development tools
 COPY --from=tools-installer /usr/bin/git /usr/bin/git
 COPY --from=tools-installer /bin/bash /bin/bash
 COPY --from=tools-installer /usr/bin/curl /usr/bin/curl
