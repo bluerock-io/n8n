@@ -58,6 +58,10 @@ FROM ${BASE_IMAGE}
 # Switch to root for installations
 USER root
 
+# Create /tmp directory with proper permissions for runner user
+# Must be done BEFORE any library copies (Kaniko RUN bug)
+RUN mkdir -p /tmp && chmod 1777 /tmp
+
 # Copy all binaries from tools-installer
 # Core utilities
 COPY --from=tools-installer /usr/bin/git /usr/bin/git
