@@ -96,27 +96,26 @@ COPY --from=tools-installer /usr/lib/node_modules/npm /usr/lib/node_modules/npm
 COPY --from=tools-installer /usr/local/lib/node_modules/@anthropic-ai/claude-code /usr/local/lib/node_modules/@anthropic-ai/claude-code
 COPY --from=tools-installer /usr/local/bin/claude /usr/local/bin/claude
 
-# Copy all required shared libraries from tools-installer
-# Using simple COPY commands instead of RUN with bind mounts to avoid execution issues
-# Core PCRE library (MUST be first - needed by /bin/sh)
-COPY --from=tools-installer /usr/lib/libpcre2-8.so.* /usr/lib/
+# Copy ONLY libraries added by our tools (not already in python:3.13-alpine base)
+# Since tools-installer and base both use python:3.13-alpine, many libraries already exist
+# Copying identical libraries causes "too many links" symlink conflicts
 
-# Network libraries (for curl, wget, git)
+# Network libraries (added by git, curl, wget packages)
 COPY --from=tools-installer /usr/lib/libcurl.so.* /usr/lib/
 COPY --from=tools-installer /usr/lib/libnghttp2.so.* /usr/lib/
 COPY --from=tools-installer /usr/lib/libidn2.so.* /usr/lib/
 COPY --from=tools-installer /usr/lib/libunistring.so.* /usr/lib/
 
-# SSL/TLS libraries (for HTTPS)
-COPY --from=tools-installer /usr/lib/libssl.so.* /usr/lib/
-COPY --from=tools-installer /usr/lib/libcrypto.so.* /usr/lib/
-
-# Tool-specific libraries
+# Tool-specific libraries (added by jq, file packages)
 COPY --from=tools-installer /usr/lib/libonig.so.* /usr/lib/
 COPY --from=tools-installer /usr/lib/libmagic.so.* /usr/lib/
-COPY --from=tools-installer /usr/lib/libstdc++.so.* /usr/lib/
 
-# Note: Skipping libz, libbz2, liblzma, libgcc_s, libssh2:
+# Note: NOT copying these - already in python:3.13-alpine base:
+# - libpcre2 (already there, /bin/sh uses it)
+# - libssl, libcrypto (Python needs these, already installed)
+# - libstdc++ (C++ stdlib, already in base)
+# - libz, libbz2, liblzma (compression libs, already there)
+# Note: Also skipping libgcc_s, libssh2:
 # - libz: Already in base image (causes symlink conflicts)
 # - libbz2, liblzma: Not installed in tools-installer
 # - libgcc_s: Not in tools-installer /lib
