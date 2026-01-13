@@ -70,18 +70,9 @@ RUN mkdir -p /tmp && chmod 1777 /tmp && \
     busybox --install -s /usr/bin || true
 
 # Copy all binaries from tools-installer
-# Coreutils (GNU coreutils provides real binaries, not busybox applets)
-COPY --from=tools-installer /usr/bin/mkdir /usr/bin/mkdir
-COPY --from=tools-installer /usr/bin/chmod /usr/bin/chmod
-COPY --from=tools-installer /usr/bin/chown /usr/bin/chown
-COPY --from=tools-installer /usr/bin/rm /usr/bin/rm
-COPY --from=tools-installer /usr/bin/cp /usr/bin/cp
-COPY --from=tools-installer /usr/bin/mv /usr/bin/mv
-COPY --from=tools-installer /usr/bin/ls /usr/bin/ls
-COPY --from=tools-installer /usr/bin/cat /usr/bin/cat
-COPY --from=tools-installer /usr/bin/touch /usr/bin/touch
-COPY --from=tools-installer /usr/bin/head /usr/bin/head
-COPY --from=tools-installer /usr/bin/tail /usr/bin/tail
+# Note: Basic Unix utilities (mkdir, chmod, rm, etc.) are busybox applets,
+# not separate binaries. They're set up via 'busybox --install' in the RUN above.
+# Only copying tools that exist as real binaries:
 
 # Development tools
 COPY --from=tools-installer /usr/bin/git /usr/bin/git
