@@ -187,6 +187,12 @@ COPY --from=tools-installer /opt/extra-modules /opt/extra-modules
 # Change default shell to bash (required by Claude Code)
 ENV SHELL=/bin/bash
 
+# Ensure Claude CLI is executable and create config directory
+# Claude Code CLI requires ~/.config/claude to exist for storing session data
+RUN chmod +x /usr/local/bin/claude && \
+    mkdir -p /home/runner/.config/claude && \
+    chown -R runner:runner /home/runner/.config
+
 # Switch back to runner user
 USER runner
 WORKDIR /home/runner
