@@ -67,12 +67,6 @@ RUN mkdir -p /opt/extra-modules && \
     @anthropic-ai/sdk@latest \
     moment@2.30.1
 
-# Patch Claude Agent SDK for Gemini/Vertex AI compatibility
-# Fixes: EnterPlanMode schema missing "type":"object" and "properties"
-# This enables the SDK to work with Gemini models via LiteLLM proxy
-COPY docker/images/runners/patch-agent-sdk-for-gemini.js /tmp/patch-sdk.js
-RUN node /tmp/patch-sdk.js && rm /tmp/patch-sdk.js
-
 FROM ${BASE_IMAGE}
 
 # Switch to root for installations
