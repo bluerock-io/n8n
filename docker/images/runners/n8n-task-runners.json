@@ -27,6 +27,7 @@
 				"ANTHROPIC_API_KEY",
 				"ANTHROPIC_BASE_URL",
 				"DISABLE_PROMPT_CACHING",
+				"DISABLE_TELEMETRY",
 				"N8N_RUNNERS_HEALTH_CHECK_SERVER_ENABLED",
 				"N8N_RUNNERS_HEALTH_CHECK_SERVER_HOST"
 			],
@@ -34,7 +35,8 @@
 				"NODE_FUNCTION_ALLOW_BUILTIN": "crypto,child_process,stream,fs",
 				"NODE_FUNCTION_ALLOW_EXTERNAL": "moment,axios,@anthropic-ai/claude-agent-sdk,@anthropic-ai/sdk,zod",
 				"N8N_RUNNERS_HEALTH_CHECK_SERVER_HOST": "0.0.0.0",
-				"NODE_PATH": "/opt/runners/task-runner-javascript/node_modules:/opt/extra-modules/node_modules"
+				"NODE_PATH": "/opt/runners/task-runner-javascript/node_modules:/opt/extra-modules/node_modules",
+				"DISABLE_TELEMETRY": "1"
 			}
 		},
 		{
