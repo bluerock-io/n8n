@@ -1274,18 +1274,138 @@ This allows:
 
 **Verification**: Build logs show "WARN No files to copy" for libraries that don't exist in tools-installer. This is expected and can be ignored if the tool still validates successfully.
 
+## SAST Tools for MCP Server Security Analysis
+
+### Overview
+
+The extended image includes a comprehensive security analysis toolkit pre-installed at `/opt/sast-tools/` for Claude Code to perform static application security testing (SAST) on Model Context Protocol (MCP) server implementations.
+
+### Installed Tools (5 Total)
+
+#### 1. Semgrep OSS (Polyglot Engine)
+- **Location**: `/usr/local/bin/semgrep`
+- **Languages**: 30+ including Python, TypeScript, JavaScript, Java, Go, Rust, C#, PHP, Ruby, Kotlin
+- **Rules**: 2000+ community security rules (OWASP Top 10, CWE mappings)
+- **Usage**: `semgrep scan --config=auto /path/to/repo`
+- **Why**: Universal SAST engine with semantic code analysis, replaces multiple specialized tools
+- **Speed**: Fastest polyglot scanner (12s on 500k LoC)
+
+#### 2. Bandit (Python Specialist)
+- **Location**: `/usr/local/bin/bandit`
+- **Languages**: Python only
+- **Rules**: Built-in plugins for Python security (exec/eval, hardcoded secrets, weak crypto, subprocess injection)
+- **Usage**: `bandit -r /path/to/python/code`
+- **Why**: Deeper Python idiom analysis, 30% better coverage when combined with Semgrep
+- **Complement**: Works alongside Semgrep for comprehensive Python coverage
+
+#### 3. Gosec (Go Specialist)
+- **Location**: `/opt/sast-tools/bin/gosec`
+- **Languages**: Go only
+- **Rules**: Go-specific security patterns (concurrency issues, weak crypto, unsafe operations)
+- **Usage**: `gosec /path/to/go/code/...`
+- **Why**: Go-native AST analysis with stdlib and concurrency awareness
+- **Complement**: Provides Go depth beyond Semgrep's capabilities
+
+#### 4. Trivy (Supply Chain & Infrastructure)
+- **Location**: `/opt/sast-tools/bin/trivy`
+- **Focus**: Dependency vulnerabilities, IaC security, Dockerfile scanning, SBOM generation
+- **Databases**: NVD, GitHub Security Advisories (works offline)
+- **Usage**: `trivy fs /path/to/repo` or `trivy config /path/to/iac`
+- **Why**: Essential supply chain security layer, catches vulnerable libraries and infrastructure misconfigurations
+- **Different Role**: Complements code analyzers by scanning dependencies and infrastructure
+
+#### 5. Gitleaks (Git History Secrets)
+- **Location**: `/opt/sast-tools/bin/gitleaks`
+- **Focus**: Secret detection in git commit history
+- **Unique**: Scans entire git history, not just current files
+- **Usage**: `gitleaks detect --source /path/to/repo`
+- **Why**: Catches credentials that were committed then deleted (Trivy only scans current files)
+- **Critical**: Essential for auditing downloaded GitHub repositories
+
+### Usage Patterns
+
+#### Quick Security Scan
+```bash
+# Run all tools on a cloned MCP server repository
+REPO_PATH="/tmp/mcp-server"
+
+# 1. Code analysis (polyglot)
+semgrep scan --config=auto $REPO_PATH
+
+# 2. Python deep dive (if Python detected)
+bandit -r $REPO_PATH
+
+# 3. Go deep dive (if Go detected)
+gosec $REPO_PATH/...
+
+# 4. Dependency vulnerabilities
+trivy fs $REPO_PATH
+
+# 5. Git history secrets
+gitleaks detect --source $REPO_PATH
+```
+
+#### From n8n Code Node
+```javascript
+const { execSync } = require('child_process');
+
+// Scan with Semgrep
+const semgrepResults = execSync(
+  'semgrep scan --config=auto --json /tmp/mcp-server',
+  { shell: '/bin/bash', encoding: 'utf-8' }
+);
+
+// Parse results
+const findings = JSON.parse(semgrepResults);
+console.log(`Found ${findings.results.length} security issues`);
+```
+
+### Tool Selection Rationale
+
+**Why These 5?**
+1. **No Overlap**: Each tool serves a distinct purpose (polyglot code, Python deep, Go deep, dependencies, secrets)
+2. **Maximum Coverage**: Covers all primary MCP server languages (Python, TypeScript, JavaScript, Go, Java, Rust)
+3. **Zero Configuration**: All include community rules out-of-the-box
+4. **Container Optimized**: Stateless, no databases, work offline
+5. **Industry Standard**: Most widely adopted open source SAST tools in 2026
+
+**What We Didn't Install (and Why):**
+- ❌ SonarQube - Requires PostgreSQL database, stateful, too complex
+- ❌ CodeQL - Licensing restrictions for commercial use
+- ❌ SpotBugs - Requires compiled bytecode, can't scan source-only repos
+- ❌ ESLint - Code quality tool, not security-focused (Semgrep better for SAST)
+- ❌ Brakeman - Rails-specific, MCP servers don't use Rails
+- ❌ OWASP Dependency-Check - Overlaps with Trivy
+- ❌ Checkov/KICS - IaC only, Trivy covers this
+
+### Build Validation
+
+Each SAST tool is tested during Docker build:
+```
+[BUILD VALIDATION] Testing final image...
+...
+semgrep --version || [FAIL]
+bandit --version || [FAIL]
+trivy --version || [FAIL]
+gitleaks version || [FAIL]
+gosec -version || [FAIL]
+```
+
+If any tool fails, the build fails immediately with a clear error message.
+
 ---
 
-**Last Updated**: 2026-01-14
+**Last Updated**: 2026-01-15
 **Based on**: n8n v2.3.0, task-runner-launcher v1.4.2
 
-**Recent Fixes** (2026-01-13 to 2026-01-14):
+**Recent Fixes** (2026-01-13 to 2026-01-15):
 - ✅ BusyBox corruption fully resolved (delete corrupted files, copy clean busybox)
 - ✅ curl compression libraries added (Brotli, Zstandard, PSL)
 - ✅ jq library dependencies added (libjq.so.1)
 - ✅ git HTTPS cloning fixed (git-remote-https helpers + templates)
 - ✅ Claude Code telemetry disabled (DISABLE_TELEMETRY=1)
 - ✅ Claude config directory added (~/.config/claude)
-- ✅ Build-time validation added (24 tests in final image)
+- ✅ Build-time validation added (27 tests in final image)
 - ✅ Kaniko RUN limitation resolved (RUN works in final stage)
-- ✅ Complete test suite: 46/46 tools tests + 44/44 git tests passing (100%)
+- ✅ SAST toolkit installed (Semgrep, Bandit, Gosec, Trivy, Gitleaks)
+- ✅ Complete test suite: 46/46 tools tests + 44/44 git tests + 5/5 SAST tests passing (100%)

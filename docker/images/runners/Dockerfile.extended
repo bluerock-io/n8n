@@ -67,6 +67,28 @@ RUN mkdir -p /opt/extra-modules && \
     @anthropic-ai/sdk@latest \
     moment@2.30.1
 
+# ==============================================================================
+# SAST TOOLS INSTALLATION - Security Analysis Toolkit
+# ==============================================================================
+# Install comprehensive static analysis tools for MCP server security auditing
+# Tools are installed to /opt/sast-tools/ for Claude Code static analysis
+
+# Install Python-based SAST tools
+RUN pip install --no-cache-dir --break-system-packages \
+    semgrep \
+    bandit
+
+# Install binary-based SAST tools
+RUN mkdir -p /opt/sast-tools/bin && \
+    # Trivy - Vulnerability scanner for dependencies and IaC
+    wget -qO- https://github.com/aquasecurity/trivy/releases/latest/download/trivy_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/64bit/;s/aarch64/ARM64/').tar.gz | tar xz -C /opt/sast-tools/bin trivy && \
+    # Gitleaks - Git history secret scanner
+    wget -qO /opt/sast-tools/bin/gitleaks https://github.com/gitleaks/gitleaks/releases/latest/download/gitleaks-linux-amd64 && \
+    chmod +x /opt/sast-tools/bin/gitleaks && \
+    # Gosec - Go security analyzer
+    wget -qO- https://github.com/securego/gosec/releases/latest/download/gosec_$(uname -s | tr '[:upper:]' '[:lower:]')_amd64.tar.gz | tar xz -C /opt/sast-tools/bin gosec && \
+    chmod +x /opt/sast-tools/bin/*
+
 FROM ${BASE_IMAGE}
 
 # Switch to root for installations
@@ -184,8 +206,18 @@ COPY --from=tools-installer /usr/lib/libmagic.so.* /usr/lib/
 # These were installed in tools-installer to avoid Kaniko RUN issues
 COPY --from=tools-installer /opt/extra-modules /opt/extra-modules
 
+# Copy SAST tools for security analysis
+# Python-based tools (semgrep, bandit) are in Python's bin directory
+# Binary tools (trivy, gitleaks, gosec) are in /opt/sast-tools/bin
+COPY --from=tools-installer /usr/local/bin/semgrep /usr/local/bin/semgrep
+COPY --from=tools-installer /usr/local/bin/bandit /usr/local/bin/bandit
+COPY --from=tools-installer /opt/sast-tools /opt/sast-tools
+
 # Change default shell to bash (required by Claude Code)
 ENV SHELL=/bin/bash
+
+# Add SAST tools to PATH for easy access
+ENV PATH="/opt/sast-tools/bin:${PATH}"
 
 # Ensure Claude CLI is executable and create config directory
 # Claude Code CLI requires ~/.config/claude to exist for storing session data
@@ -233,7 +265,13 @@ RUN echo "[BUILD VALIDATION] Testing final image..." && \
     /bin/busybox --help > /dev/null 2>&1 || (echo "[FAIL] busybox not working" && exit 1) && \
     # Test critical files exist
     test -f /usr/local/bin/claude || (echo "[FAIL] claude binary not copied" && exit 1) && \
-    echo "[BUILD VALIDATION] ✓ All tools, libraries, and configs verified in final image"
+    # Test SAST tools (security analysis toolkit)
+    semgrep --version || (echo "[FAIL] semgrep not working" && exit 1) && \
+    bandit --version || (echo "[FAIL] bandit not working" && exit 1) && \
+    trivy --version || (echo "[FAIL] trivy not working" && exit 1) && \
+    gitleaks version || (echo "[FAIL] gitleaks not working" && exit 1) && \
+    gosec -version || (echo "[FAIL] gosec not working" && exit 1) && \
+    echo "[BUILD VALIDATION] ✓ All tools, libraries, configs, and SAST tools verified in final image"
 
 # Switch back to runner user
 USER runner
