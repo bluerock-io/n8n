@@ -207,10 +207,11 @@ COPY --from=tools-installer /usr/lib/libmagic.so.* /usr/lib/
 COPY --from=tools-installer /opt/extra-modules /opt/extra-modules
 
 # Copy SAST tools for security analysis
-# Python-based tools (semgrep, bandit) are in Python's bin directory
-# Binary tools (trivy, gitleaks, gosec) are in /opt/sast-tools/bin
+# Python-based tools need both binaries AND their site-packages
 COPY --from=tools-installer /usr/local/bin/semgrep /usr/local/bin/semgrep
 COPY --from=tools-installer /usr/local/bin/bandit /usr/local/bin/bandit
+COPY --from=tools-installer /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
+# Binary tools (trivy, gitleaks, gosec)
 COPY --from=tools-installer /opt/sast-tools /opt/sast-tools
 
 # Change default shell to bash (required by Claude Code)
