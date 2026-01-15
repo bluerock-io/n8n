@@ -80,13 +80,13 @@ RUN pip install --no-cache-dir --break-system-packages \
 
 # Install binary-based SAST tools
 RUN mkdir -p /opt/sast-tools/bin && \
-    # Trivy - Vulnerability scanner for dependencies and IaC
-    wget -qO- https://github.com/aquasecurity/trivy/releases/latest/download/trivy_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/64bit/;s/aarch64/ARM64/').tar.gz | tar xz -C /opt/sast-tools/bin trivy && \
+    cd /tmp && \
+    # Trivy - Vulnerability scanner (using install script)
+    wget -qO- https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /opt/sast-tools/bin && \
     # Gitleaks - Git history secret scanner
-    wget -qO /opt/sast-tools/bin/gitleaks https://github.com/gitleaks/gitleaks/releases/latest/download/gitleaks-linux-amd64 && \
-    chmod +x /opt/sast-tools/bin/gitleaks && \
+    wget -qO- https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz | tar xz -C /opt/sast-tools/bin gitleaks && \
     # Gosec - Go security analyzer
-    wget -qO- https://github.com/securego/gosec/releases/latest/download/gosec_$(uname -s | tr '[:upper:]' '[:lower:]')_amd64.tar.gz | tar xz -C /opt/sast-tools/bin gosec && \
+    wget -qO- https://github.com/securego/gosec/releases/download/v2.21.4/gosec_2.21.4_linux_amd64.tar.gz | tar xz -C /opt/sast-tools/bin gosec && \
     chmod +x /opt/sast-tools/bin/*
 
 FROM ${BASE_IMAGE}
